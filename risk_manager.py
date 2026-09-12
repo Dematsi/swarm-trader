@@ -258,6 +258,16 @@ def validate_trade(
     if action not in ("buy", "short"):
         return ValidationResult(approved=False, reason=f"Unknown action '{action}'", rule="unknown_action")
 
+    # Without a real price, size/cash/sector rules would see trade_value = 0 and pass.
+    try:
+        entry_price = float(entry_price)
+    except (TypeError, ValueError):
+        entry_price = 0.0
+    if not entry_price > 0:
+        msg = f"BLOCKED: No valid reference price for {action.upper()} {ticker} — cannot size the trade safely."
+        log.warning(msg)
+        return ValidationResult(approved=False, reason=msg, rule="invalid_entry_price")
+
     if portfolio_state is None:
         try:
             portfolio_state = get_portfolio_state(mode=mode)

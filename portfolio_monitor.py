@@ -20,6 +20,7 @@ import os
 import sys
 from datetime import datetime, timedelta
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
 
@@ -66,6 +67,15 @@ def get_account() -> dict:
 
 def get_positions() -> list[dict]:
     return _get("positions")
+
+
+def is_market_open() -> bool:
+    """True only if Alpaca's clock confirms the market is open. Any failure counts as closed."""
+    try:
+        return bool(_get("clock").get("is_open", False))
+    except Exception as e:
+        log.warning(f"Could not query Alpaca market clock: {e}")
+        return False
 
 
 def place_market_sell(symbol: str, qty: int, reason: str, dry_run: bool) -> dict:
@@ -219,8 +229,11 @@ def run_monitor(dry_run: bool = False, mode: str = None) -> dict:
     if mode_risk.get("flatten_eod", False):
         flatten_time = mode_risk.get("flatten_by", "15:45")
         h, m = map(int, flatten_time.split(":"))
-        now = datetime.now()
-        if now.hour > h or (now.hour == h and now.minute >= m):
+        now = datetime.now(ZoneInfo("America/New_York"))
+        past_flatten_time = now.hour > h or (now.hour == h and now.minute >= m)
+        if past_flatten_time and not is_market_open():
+            log.warning(f"Day mode: past {flatten_time} ET but market is not confirmed open — skipping EOD flatten")
+        elif past_flatten_time:
             log.info(f"Day mode: past {flatten_time} ET — flattening all positions")
             try:
                 from execute_trades import flatten_all

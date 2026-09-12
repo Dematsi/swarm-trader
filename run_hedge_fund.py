@@ -138,8 +138,8 @@ Examples:
     parser.add_argument("--model", type=str, default=None,
                         help="Model to use (default: LLM_MODEL env var or openclaw.json)")
     parser.add_argument("--analysts", type=str,
-                        default="warren_buffett,michael_burry,cathie_wood,apex,autoresearch,fundamentals_analyst,technical_analyst",
-                        help="Comma-separated list of analysts to use")
+                        default="warren_buffett,michael_burry,cathie_wood,apex,fundamentals_analyst,technical_analyst",
+                        help="Comma-separated list of analysts to use (autoresearch runs LLM-evolved code; opt in explicitly)")
     parser.add_argument("--show-reasoning", action="store_true",
                         help="Show detailed reasoning from each agent")
 

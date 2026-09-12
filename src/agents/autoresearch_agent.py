@@ -103,7 +103,10 @@ def _build_market_context(
       - spy_change_pct: float (SPY daily change % for alignment bonus)
       - qqq_change_pct: float (QQQ daily change % for alignment bonus)
     """
-    from datetime import datetime, timezone, timedelta
+    from datetime import datetime, timezone
+    from zoneinfo import ZoneInfo
+
+    eastern = ZoneInfo("America/New_York")
 
     # Strategy expects Eastern Time for time-of-day filters
     # Use the timestamp of the last bar if available, otherwise compute ET now
@@ -118,18 +121,18 @@ def _build_market_context(
                     try:
                         from datetime import datetime as dt
                         parsed = dt.fromisoformat(last_t.replace("Z", "+00:00"))
-                        # Convert to ET (UTC-4 during EDT, UTC-5 during EST)
-                        # Approximate: use -4 during March-Nov
-                        et = parsed - timedelta(hours=4)
+                        if parsed.tzinfo is None:
+                            parsed = parsed.replace(tzinfo=timezone.utc)
+                        # Convert to ET with real DST rules (EDT = UTC-4, EST = UTC-5)
+                        et = parsed.astimezone(eastern)
                         current_bar_time = et.strftime("%H:%M")
                     except Exception:
                         pass
                 break
 
     if not current_bar_time:
-        # Fallback: compute ET from current UTC time
-        now_utc = datetime.now(timezone.utc)
-        et = now_utc - timedelta(hours=4)  # EDT approximation
+        # Fallback: current Eastern time
+        et = datetime.now(eastern)
         current_bar_time = et.strftime("%H:%M")
 
     ctx = {
