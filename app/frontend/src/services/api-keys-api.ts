@@ -1,16 +1,6 @@
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
-export interface ApiKey {
-  id: number;
-  provider: string;
-  key_value: string;
-  is_active: boolean;
-  description?: string;
-  created_at: string;
-  updated_at?: string;
-  last_used?: string;
-}
-
+// The backend never returns stored key values, only a masked preview.
 export interface ApiKeySummary {
   id: number;
   provider: string;
@@ -20,7 +10,10 @@ export interface ApiKeySummary {
   updated_at?: string;
   last_used?: string;
   has_key: boolean;
+  key_preview?: string | null;
 }
+
+export type ApiKey = ApiKeySummary;
 
 export interface ApiKeyCreateRequest {
   provider: string;

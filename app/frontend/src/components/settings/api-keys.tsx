@@ -76,7 +76,10 @@ const LLM_API_KEYS: ApiKey[] = [
 ];
 
 export function ApiKeysSettings() {
+  // Values typed in this session. Stored keys are never sent back by the backend.
   const [apiKeys, setApiKeys] = useState<Record<string, string>>({});
+  // Masked previews (e.g. "****abcd") of keys already stored on the backend
+  const [savedKeyPreviews, setSavedKeyPreviews] = useState<Record<string, string>>({});
   const [visibleKeys, setVisibleKeys] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -91,19 +94,16 @@ export function ApiKeysSettings() {
       setLoading(true);
       setError(null);
       const apiKeysSummary = await apiKeysService.getAllApiKeys();
-      
-      // Load actual key values for existing keys
-      const keysData: Record<string, string> = {};
+
+      const previews: Record<string, string> = {};
       for (const summary of apiKeysSummary) {
-        try {
-          const fullKey = await apiKeysService.getApiKey(summary.provider);
-          keysData[summary.provider] = fullKey.key_value;
-        } catch (err) {
-          console.warn(`Failed to load key for ${summary.provider}:`, err);
+        if (summary.has_key) {
+          previews[summary.provider] = summary.key_preview || '****';
         }
       }
-      
-      setApiKeys(keysData);
+
+      setSavedKeyPreviews(previews);
+      setApiKeys({});
     } catch (err) {
       console.error('Failed to load API keys:', err);
       setError('Failed to load API keys. Please try again.');
@@ -122,11 +122,12 @@ export function ApiKeysSettings() {
     // Auto-save with debouncing
     try {
       if (value.trim()) {
-        await apiKeysService.createOrUpdateApiKey({
+        const saved = await apiKeysService.createOrUpdateApiKey({
           provider: key,
           key_value: value.trim(),
           is_active: true
         });
+        setSavedKeyPreviews(prev => ({ ...prev, [key]: saved.key_preview || '****' }));
       } else {
         // If value is empty, delete the key
         try {
@@ -135,6 +136,11 @@ export function ApiKeysSettings() {
           // Key might not exist, which is fine
           console.log(`Key ${key} not found for deletion, which is expected`);
         }
+        setSavedKeyPreviews(prev => {
+          const newPreviews = { ...prev };
+          delete newPreviews[key];
+          return newPreviews;
+        });
       }
     } catch (err) {
       console.error(`Failed to save API key ${key}:`, err);
@@ -156,6 +162,11 @@ export function ApiKeysSettings() {
         const newKeys = { ...prev };
         delete newKeys[key];
         return newKeys;
+      });
+      setSavedKeyPreviews(prev => {
+        const newPreviews = { ...prev };
+        delete newPreviews[key];
+        return newPreviews;
       });
     } catch (err) {
       console.error(`Failed to delete API key ${key}:`, err);
@@ -184,13 +195,17 @@ export function ApiKeysSettings() {
             <div className="relative">
               <Input
                 type={visibleKeys[apiKey.key] ? 'text' : 'password'}
-                placeholder={apiKey.placeholder}
+                placeholder={
+                  savedKeyPreviews[apiKey.key]
+                    ? `Saved (${savedKeyPreviews[apiKey.key]}), type to replace`
+                    : apiKey.placeholder
+                }
                 value={apiKeys[apiKey.key] || ''}
                 onChange={(e) => handleKeyChange(apiKey.key, e.target.value)}
                 className="pr-20"
               />
               <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-1">
-                {apiKeys[apiKey.key] && (
+                {(apiKeys[apiKey.key] || savedKeyPreviews[apiKey.key]) && (
                   <Button
                     variant="ghost"
                     size="icon"

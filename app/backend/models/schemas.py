@@ -256,19 +256,13 @@ class ApiKeyUpdateRequest(BaseModel):
     is_active: Optional[bool] = None
 
 
-class ApiKeyResponse(BaseModel):
-    """Complete API key response"""
-    id: int
-    provider: str
-    key_value: str
-    is_active: bool
-    description: Optional[str]
-    created_at: datetime
-    updated_at: Optional[datetime]
-    last_used: Optional[datetime]
-
-    class Config:
-        from_attributes = True
+def mask_api_key(key_value: Optional[str]) -> Optional[str]:
+    """Display-only preview of a stored key: last 4 chars of long keys, nothing of short ones."""
+    if not key_value:
+        return None
+    if len(key_value) < 16:
+        return "****"
+    return f"****{key_value[-4:]}"
 
 
 class ApiKeySummaryResponse(BaseModel):
@@ -281,9 +275,23 @@ class ApiKeySummaryResponse(BaseModel):
     updated_at: Optional[datetime]
     last_used: Optional[datetime]
     has_key: bool = True  # Indicates if a key is set
+    key_preview: Optional[str] = None  # Masked, e.g. "****abcd"
 
     class Config:
         from_attributes = True
+
+    @classmethod
+    def from_api_key(cls, api_key):
+        """Build from the ORM row; the key value itself is never copied into the response."""
+        response = cls.model_validate(api_key)
+        response.has_key = bool(api_key.key_value)
+        response.key_preview = mask_api_key(api_key.key_value)
+        return response
+
+
+class ApiKeyResponse(ApiKeySummaryResponse):
+    """API key response for single-key and write endpoints. Never includes the key value:
+    backend services read keys from the database via ApiKeyService, not over HTTP."""
 
 
 class ApiKeyBulkUpdateRequest(BaseModel):
