@@ -30,9 +30,13 @@ from pathlib import Path
 from typing import Any
 
 import requests
-from dotenv import load_dotenv
+from dotenv import dotenv_values
 
-load_dotenv()
+# Only the Alpaca data keys are needed. strategy.py (agent-written under evolve.py)
+# runs in this process, so don't pull the rest of .env into os.environ.
+for _key, _value in dotenv_values().items():
+    if _key in ("ALPACA_API_KEY", "ALPACA_API_SECRET") and _value is not None:
+        os.environ.setdefault(_key, _value)
 
 # ---------------------------------------------------------------------------
 # Paths
