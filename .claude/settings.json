@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Bash(uv run pytest:*)",
+      "Bash(uv sync:*)",
+      "Bash(uv tree:*)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(uv run python risk_manager.py --status:*)"
+    ],
+    "ask": [
+      "Bash(uv run python execute_trades.py:*)",
+      "Bash(uv run python run_hedge_fund.py:*)",
+      "Bash(uv run python rebalance.py:*)",
+      "Bash(uv run python portfolio_monitor.py:*)",
+      "Bash(uv run python autoresearch/evolve.py:*)",
+      "Bash(git push:*)"
+    ],
+    "deny": [
+      "Read(./.env)"
+    ]
+  }
+}
