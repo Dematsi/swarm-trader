@@ -31,6 +31,10 @@ uv run black . && uv run isort .               # formatting (black line-length i
 uv run python risk_manager.py --status --mode swing            # read-only account/risk check
 ```
 
+`docker/Dockerfile` installs from `uv.lock`. The web-app launchers `app/run.sh` and
+`app/run.bat` still call Poetry; to run the backend directly, use
+`uv run uvicorn app.backend.main:app --host 127.0.0.1 --port 8000`.
+
 `tests/test_api_rate_limiting.py` fails at collection upstream: it imports `_make_api_request`,
 which no longer exists after the switch to the free data layer. The other 37 tests (all under
 `tests/backtesting/`) pass. There is no CI or lint config beyond black/isort in `pyproject.toml`.
@@ -87,18 +91,30 @@ There are two largely independent layers plus a separate research loop.
 **`app/`** is upstream's web UI: a FastAPI backend on SQLite (`app/backend`, alembic migrations)
 and a React/Vite flow editor (`app/frontend`). It is not used by the scripts above.
 
-## Known hazards (security audit, 2026-09-12)
+## Safety invariants (security audit + fixes, 2026-09-12)
 
-Treat these as open issues when changing trading paths:
-- `execute_trades.py` **fails open**: if importing `risk_manager` fails, it logs a warning and
-  continues with legacy checks only. Sells and covers are never rule-checked.
-- Day-mode EOD flatten in `portfolio_monitor.py` compares naive `datetime.now()` (local clock)
-  to "15:45 ET", so on a non-Eastern machine it flattens at the wrong time.
-- LLM portfolio decisions are not clamped to `allowed_actions`/`max_shares`. The audit also
-  found that V2 size and cash rules can pass when the reference price for an unheld ticker is 0.
-- `autoresearch/evolve.py` loads `.env` and gives the spawned `claude` process unrestricted
-  `Bash` with the full environment. Don't run it on a machine holding broker keys.
-- Runtime state files `data/*.json*`, `snapshots/*.json` and `autoresearch/experiments/*.jsonl`
-  are tracked in git despite `.gitignore`, so live results will show up in `git status`/commits.
-- `app/backend` has no auth, returns stored API keys in plaintext, and has a path traversal in
-  `routes/storage.py`. It binds to 127.0.0.1 only.
+These behaviors were added on purpose and are covered by `tests/safety/` and `tests/security/`.
+Don't regress them:
+- `execute_trades.py` **fails closed**. If `risk_manager` can't be imported, or the daily
+  circuit breaker has tripped, buy/short entries are rejected while sells/covers still go
+  through. An entry with no resolvable price (from the trade, the position, or Alpaca's latest
+  trade) is rejected, and `risk_manager.validate_trade` also rejects a price <= 0.
+- `portfolio_monitor.py` checks the EOD flatten time in `America/New_York` and flattens only
+  when Alpaca's `/v2/clock` says the market is open.
+- `portfolio_manager` clamps LLM decisions to `compute_allowed_actions` and drops tickers it
+  wasn't asked about. `autoresearch` is not in `run_hedge_fund.py`'s default analysts.
+- `autoresearch/evolve.py` runs `claude` with `Read`/`Edit(strategy.py)` only, no Bash, and an
+  allowlisted environment without broker/LLM keys (`build_agent_env`).
+- `app/backend` masks API keys in responses, enforces `TrustedHostMiddleware`
+  (127.0.0.1/localhost), and rejects path traversal in `routes/storage.py`.
+
+Still open:
+- `src/alpaca_integration.py:execute_decisions` still has a fail-open `risk_manager` import.
+  `run_hedge_fund.py` doesn't use it.
+- `src/accounts.py:get_account_for_mode("day")` doesn't fall back to the primary keys (the
+  README says it should). `src/alpaca_integration.py` resolves headers at import, so importing
+  `run_hedge_fund` raises when day keys are absent.
+- Code the AI writes into `autoresearch/strategy.py` is still unsandboxed Python at backtest time.
+- `autoresearch/strategy.py` and `gather_data.py` use a fixed -4h/`-04:00` ET offset, which is
+  wrong during EST.
+- `app/frontend`: `npm run build` already failed with 18 `tsc` errors before the dependency bump.
