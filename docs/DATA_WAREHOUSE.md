@@ -50,6 +50,37 @@ NVDA, QQQ, SLV, SPY, TLT, TSLA (`research_bars_5m` also contains `SLV2`, an adju
 4. Only ~3 weeks of Greeks/IV exist. Anything IV-based needs IV reconstructed from bar prices
    (Black-Scholes on bar close + underlying close) for the longer 2025–2026 sample.
 
+## Bar sufficiency for intraday single legs (measured 2026-09-12)
+
+Setup: 424 trading days (2025-01-02 → 2026-09-11). At decision times every 30 min from 10:00
+to 15:00 ET, pick the contract a backtest would trade: nearest expiry or the first expiry
+≥ 5 days out, ATM or one strike further OTM, call and put. That contract counts as
+**tradeable** when it has a bar at t+5m (entry) and a bar in [t+25m, t+35m] (exit).
+
+| Nearest-expiry ATM | Tradeable | Median DTE | Avg bars in next 60m (of 12) |
+|---|---|---|---|
+| NVDA, AAPL, TSLA, AMZN | 90–93% | 4 | ~11 |
+| GOOGL, AMD, MSFT, INTC | 80–85% | 4 | ~10 |
+| SPY (0DTE) | 82% | 0 | 10 |
+| META, NFLX, QQQ (0DTE) | 70–73% | 0–4 | ~8.7 |
+| IWM, SLV, TLT | 55–64% | 4 | ~7 |
+| GLD, ADBE | 31–41% | 4 | ~5 |
+
+- **One strike further OTM loses 15–25 points**, mostly because that strike wasn't captured
+  (only 58–84% of samples have it). Next-weekly ATM runs 2–15 points below nearest.
+- **0DTE only exists for SPY and QQQ.** Single names and IWM have weekly expiries only (median
+  DTE 4), because of what the sibling bot chose to collect, not a market limit.
+- **Time of day:** tradeable falls from 84% at 10:00 to about 68% from 12:30–14:30.
+- **Coverage drifts:** tradeable is 72–81% through 2026-05, then drops to 55% (2026-06) and
+  54% (2026-08), consistent with the collector's contract selection changing. Check results
+  by month.
+- Bias caveats: (1) ATM was chosen among contracts that printed *that day*, which peeks at the
+  whole day; a real backtest must choose from the strike ladder known at signal time. (2) A
+  missing bar means no trade printed, not that the contract was unquotable. Requiring bars
+  selects for active moments.
+
+Script: throwaway spike, not committed. Its logic is described above.
+
 ## Connecting
 
 ```python
