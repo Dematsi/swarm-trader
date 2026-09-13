@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import gzip
+import json
 import zipfile
 from collections.abc import Iterable
 from concurrent.futures import ProcessPoolExecutor
@@ -60,6 +61,37 @@ def day_path(root: Path, symbol: str, day: date) -> Path:
     return root / "stock_1m" / symbol / f"{day.year}" / f"{day.isoformat()}.parquet"
 
 
+def day_done_path(root: Path, day: date) -> Path:
+    return root / "_manifest" / "stock_1m" / f"{day.isoformat()}.json"
+
+
+def mark_day_done(root: Path, day: date, tickers: Iterable[str], rows: int) -> None:
+    """Write a JSON marker indicating the day has been fully ingested."""
+    path = day_done_path(root, day)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    marker = {
+        "tickers": sorted(tickers),
+        "rows": int(rows),
+    }
+    with open(path, "w") as f:
+        json.dump(marker, f)
+
+
+def is_day_done(root: Path, day: date, tickers: Iterable[str]) -> bool:
+    """Check if the day has been fully ingested for the requested tickers."""
+    path = day_done_path(root, day)
+    if not path.exists():
+        return False
+    try:
+        with open(path) as f:
+            marker = json.load(f)
+        marker_tickers = set(marker.get("tickers", []))
+        requested_tickers = set(tickers)
+        return requested_tickers.issubset(marker_tickers)
+    except (json.JSONDecodeError, KeyError):
+        return False
+
+
 def write_day(df: pd.DataFrame, day: date, root: Path) -> int:
     for symbol, group in df.groupby("symbol"):
         path = day_path(root, symbol, day)
@@ -70,7 +102,9 @@ def write_day(df: pd.DataFrame, day: date, root: Path) -> int:
 
 def _ingest_one(job: tuple[Path, str, date, tuple[str, ...], Path]) -> int:
     zip_path, member, day, tickers, root = job
-    return write_day(read_zip_day(zip_path, member, tickers), day, root)
+    rows = write_day(read_zip_day(zip_path, member, tickers), day, root)
+    mark_day_done(root, day, tickers, rows)
+    return rows
 
 
 def ingest_zip(
@@ -89,7 +123,7 @@ def ingest_zip(
     jobs = [
         (zip_path, member, day, tickers, root)
         for day, member in in_range.items()
-        if overwrite or not day_path(root, tickers[0], day).exists()
+        if overwrite or not is_day_done(root, day, tickers)
     ]
     if workers <= 1:
         row_counts = [_ingest_one(job) for job in jobs]
