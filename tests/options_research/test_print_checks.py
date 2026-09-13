@@ -1,10 +1,13 @@
 from datetime import date
+from pathlib import Path
 
 import httpx
 import pandas as pd
+import pytest
 
 from src.options_research.alpaca_data import AlpacaDataClient, RateLimiter
 from src.options_research.print_checks import (
+    CANDIDATES_COLUMNS,
     CHECK_COLUMNS,
     candidates_path,
     checks_path,
@@ -100,3 +103,78 @@ def test_rebuild_clean_end_to_end_with_mock_alpaca(tmp_path):
     assert summary["candidates"] == 1 and summary["isolated"] == 1 and summary["flags"] == 1
     row = pd.read_parquet(day_path(tmp_path, "SYM", DAY)).set_index("ts").loc[WICK_TS]
     assert row["low_clean"] == 182.75
+
+
+def _boom_to_parquet(self, target, *args, **kwargs):
+    """Simulate a crash mid-write: touch the temp file with garbage, then blow up before replace."""
+    Path(target).write_bytes(b"garbage")
+    raise RuntimeError("simulated crash mid-write")
+
+
+def test_confirm_candidates_write_is_atomic_on_crash(tmp_path, monkeypatch):
+    seed(tmp_path)
+    cands = scan_candidates(tmp_path, symbols=["SYM"], workers=1)
+    confirm_candidates(cands, fake_trades, root=tmp_path)
+    path = checks_path(tmp_path)
+    baseline = path.read_bytes()
+
+    monkeypatch.setattr(pd.DataFrame, "to_parquet", _boom_to_parquet)
+    with pytest.raises(RuntimeError):
+        confirm_candidates(cands, fake_trades, root=tmp_path)
+
+    assert path.read_bytes() == baseline
+    assert not path.with_name(path.name + ".tmp").exists()
+
+
+def test_rewrite_clean_columns_write_is_atomic_on_crash(tmp_path, monkeypatch):
+    seed(tmp_path)
+    cands = scan_candidates(tmp_path, symbols=["SYM"], workers=1)
+    checks = confirm_candidates(cands, fake_trades, root=tmp_path)
+    path = day_path(tmp_path, "SYM", DAY)
+    baseline = path.read_bytes()
+
+    monkeypatch.setattr(pd.DataFrame, "to_parquet", _boom_to_parquet)
+    with pytest.raises(RuntimeError):
+        rewrite_clean_columns(checks, root=tmp_path, symbols=["SYM"], workers=1)
+
+    assert path.read_bytes() == baseline
+    assert not path.with_name(path.name + ".tmp").exists()
+
+
+def test_confirm_candidates_flush_and_resume_after_partial_failure(tmp_path):
+    rows = [
+        {"symbol": "SYM", "session_date": DAY, "ts": WICK_TS + pd.Timedelta(minutes=i),
+         "side": "low", "extreme": 150.0, "reference": 183.0, "band": 5.0}
+        for i in range(5)
+    ]
+    cands = pd.DataFrame(rows, columns=CANDIDATES_COLUMNS)
+
+    first_calls = []
+
+    def flaky_fetch(symbol, ts):
+        first_calls.append((symbol, ts))
+        if len(first_calls) == 4:
+            raise RuntimeError("simulated network failure")
+        return []
+
+    with pytest.raises(RuntimeError):
+        confirm_candidates(cands, flaky_fetch, root=tmp_path, flush_every=2)
+
+    on_disk = pd.read_parquet(checks_path(tmp_path))
+    assert len(on_disk) == 2
+    assert on_disk["ts"].tolist() == [rows[0]["ts"], rows[1]["ts"]]
+
+    second_calls = []
+
+    def ok_fetch(symbol, ts):
+        second_calls.append((symbol, ts))
+        return []
+
+    final = confirm_candidates(cands, ok_fetch, root=tmp_path, flush_every=2)
+
+    # The two already-flushed candidates are not re-fetched; the lost in-memory one (#2) and the
+    # two never-attempted ones (#3, #4) are.
+    assert second_calls == [(r["symbol"], r["ts"]) for r in rows[2:]]
+    assert len(final) == 5
+    keys = list(zip(final["symbol"], final["ts"], final["side"]))
+    assert len(keys) == len(set(keys))

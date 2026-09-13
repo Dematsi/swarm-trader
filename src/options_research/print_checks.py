@@ -7,6 +7,7 @@ Phases: scan (offline, parallel) -> confirm (Alpaca SIP trades, resumable) -> re
 
 from __future__ import annotations
 
+import os
 from collections.abc import Callable, Iterable
 from concurrent.futures import ProcessPoolExecutor
 from datetime import date
@@ -38,6 +39,21 @@ def lake_day_files(root: Path, symbols: Iterable[str]) -> list[Path]:
     return files
 
 
+def _atomic_to_parquet(df: pd.DataFrame, path: Path) -> None:
+    """Write parquet atomically: build a sibling temp file, then `os.replace` it over the destination.
+
+    A crash or exception during the write leaves the destination untouched (never a half-written file);
+    the temp file is removed on failure so it never accumulates or is mistaken for real output.
+    """
+    tmp = path.with_name(path.name + ".tmp")
+    try:
+        df.to_parquet(tmp, index=False)
+        os.replace(tmp, path)
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
+
+
 def _scan_file(path: Path) -> pd.DataFrame:
     day = pd.read_parquet(path, columns=["ts", "open", "high", "low", "close"])
     candidates = find_print_candidates(day)
@@ -61,7 +77,7 @@ def scan_candidates(root: Path | None = None, symbols: Iterable[str] = UNIVERSE,
     candidates = pd.concat(parts, ignore_index=True) if parts else pd.DataFrame(columns=CANDIDATES_COLUMNS)
     path = candidates_path(root)
     path.parent.mkdir(parents=True, exist_ok=True)
-    candidates.to_parquet(path, index=False)
+    _atomic_to_parquet(candidates, path)
     return candidates
 
 
@@ -76,7 +92,7 @@ def _write_checks(existing: pd.DataFrame, rows: list[dict], path: Path) -> pd.Da
         new = pd.DataFrame(rows, columns=CHECK_COLUMNS)
         combined = new if existing.empty else pd.concat([existing, new], ignore_index=True)
     path.parent.mkdir(parents=True, exist_ok=True)
-    combined.to_parquet(path, index=False)
+    _atomic_to_parquet(combined, path)
     return combined
 
 
@@ -116,7 +132,7 @@ def _rewrite_file(job: tuple[Path, pd.DataFrame | None]) -> int:
     path, checks = job
     day = pd.read_parquet(path)
     cleaned = apply_clean(day.drop(columns=["bad_close"], errors="ignore"), checks)
-    cleaned[STOCK_COLUMNS].to_parquet(path, index=False)
+    _atomic_to_parquet(cleaned[STOCK_COLUMNS], path)
     return int(cleaned["bad_high"].sum() + cleaned["bad_low"].sum())
 
 
