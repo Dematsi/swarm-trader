@@ -2,11 +2,12 @@ from datetime import date, time
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from src.options_research.levels import DayLevels
 from src.options_research.market_calendar import get_session
 from src.options_research.setups import SETUPS, detect_all
-from src.options_research.setups.base import SIGNAL_COLUMNS, previous_run, window_mask, with_cooldown
+from src.options_research.setups.base import SIGNAL_COLUMNS, first_true, grid_signal, previous_run, window_mask, with_cooldown
 from src.options_research.setups.gaps_levels import detect_gap_fill, detect_gap_go, detect_pdl_break
 from src.options_research.setups.orb import detect_orb
 from tests.options_research.setup_helpers import DAY, assert_point_in_time, at, make_ctx, make_grid, set_bar
@@ -68,8 +69,8 @@ def test_gap_down_go_short_and_fill_long():
     set_bar(grid, "10:05", 99.5)
     set_bar(grid, "10:40", 100.5)
     ctx = make_ctx(grid, levels=DayLevels(day=DAY, prior_close=101.0, premarket_high=100.4, premarket_low=99.7))
-    assert summary(detect_gap_go(ctx)) == [("GAP_GO", "short", at("10:06"), 100.05, "above")]
-    assert summary(detect_gap_fill(ctx)) == [("GAP_FILL", "long", at("10:41"), 99.95, "below")]
+    assert summary(assert_point_in_time(detect_gap_go, ctx)) == [("GAP_GO", "short", at("10:06"), 100.05, "above")]
+    assert summary(assert_point_in_time(detect_gap_fill, ctx)) == [("GAP_FILL", "long", at("10:41"), 99.95, "below")]
 
 
 def test_small_gap_and_late_fill_produce_nothing():
@@ -91,6 +92,23 @@ def test_prior_day_level_breaks_need_the_atr_buffer():
         ("PDL_BREAK", "long", at("12:01"), 100.2, "below"),
         ("PDL_BREAK", "short", at("13:01"), 99.1, "above"),
     ]
+
+
+def test_point_in_time_helper_catches_a_look_ahead_detector():
+    def peek(ctx):
+        window = window_mask(ctx.grid["decision_ts"], ctx.session, time(10, 0), time(15, 0))
+        close = ctx.grid["close"].to_numpy()
+        peeked = np.zeros(len(close), dtype=bool)
+        peeked[:-1] = close[1:] > 100.2
+        i = first_true(window & peeked)
+        if i is None:
+            return []
+        return [grid_signal(ctx, "PEEK", "long", i, "level", "below", 99.0, "peek")]
+
+    grid = make_grid()
+    set_bar(grid, "10:05", 100.5)
+    with pytest.raises(AssertionError):
+        assert_point_in_time(peek, make_ctx(grid))
 
 
 def test_registry_and_signal_shape():

@@ -1,7 +1,10 @@
 """Synthetic DayContext builders and the point-in-time check for setup detectors (spec §10).
 
 `assert_point_in_time` perturbs every 1-min row starting at or after a cut time T, and every
-5-min bar ending after T. It then requires every signal decided at or before T to stay identical.
+5-min bar ending after T, using three modes (`down`: x0.5/all-False, `up`: x1.5/all-True,
+`random`: uniform(0.5, 1.5)/random-bool) across several seeds. It then requires every signal
+decided at or before T to stay identical under every mode and seed, so a detector that peeks at
+a later bar and would only sometimes land on the other side of a threshold is still caught.
 """
 
 from dataclasses import replace
@@ -78,7 +81,7 @@ def make_ctx(grid=None, *, levels=None, five=None, spy_grid=None, symbol="TEST")
     )
 
 
-def _perturb(frame, time_column, cut, rng, strict):
+def _perturb(frame, time_column, cut, rng, strict, mode):
     if frame is None or frame.empty:
         return frame
     out = frame.copy()
@@ -89,11 +92,22 @@ def _perturb(frame, time_column, cut, rng, strict):
             continue
         if out[column].dtype == bool:
             values = out[column].to_numpy().copy()
-            values[later.to_numpy()] = rng.random(count) < 0.5
+            if mode == "down":
+                values[later.to_numpy()] = False
+            elif mode == "up":
+                values[later.to_numpy()] = True
+            else:
+                values[later.to_numpy()] = rng.random(count) < 0.5
             out[column] = values
         elif np.issubdtype(out[column].dtype, np.number):
             values = out[column].astype(float).to_numpy().copy()
-            values[later.to_numpy()] = values[later.to_numpy()] * rng.uniform(0.95, 1.05, count)
+            if mode == "down":
+                factor = 0.5
+            elif mode == "up":
+                factor = 1.5
+            else:
+                factor = rng.uniform(0.5, 1.5, count)
+            values[later.to_numpy()] = values[later.to_numpy()] * factor
             out[column] = values
     return out
 
@@ -102,18 +116,20 @@ def signal_key(signal: dict) -> tuple:
     return (signal["setup"], signal["direction"], signal["decision_ts"], round(signal["price"], 9), signal["inval_kind"], signal["inval_side"], round(signal["inval_value"], 9))
 
 
-def assert_point_in_time(detect, ctx: DayContext, extra_cuts=("10:15", "11:45", "14:30"), seed: int = 0) -> list[dict]:
+def assert_point_in_time(detect, ctx: DayContext, extra_cuts=("10:15", "11:45", "14:30"), seeds=(0, 1, 2)) -> list[dict]:
     base = detect(ctx)
     cuts = sorted({s["decision_ts"] for s in base} | {at(c) for c in extra_cuts})
-    rng = np.random.default_rng(seed)
     for cut in cuts:
-        perturbed = replace(
-            ctx,
-            grid=_perturb(ctx.grid, "ts", cut, rng, strict=False),
-            five=_perturb(ctx.five, "end", cut, rng, strict=True),
-            spy_grid=_perturb(ctx.spy_grid, "ts", cut, rng, strict=False),
-        )
         expected = sorted(signal_key(s) for s in base if s["decision_ts"] <= cut)
-        actual = sorted(signal_key(s) for s in detect(perturbed) if s["decision_ts"] <= cut)
-        assert actual == expected, f"signals decided by {cut} changed after perturbing later bars"
+        for mode in ("down", "up", "random"):
+            for seed in seeds:
+                rng = np.random.default_rng(seed)
+                perturbed = replace(
+                    ctx,
+                    grid=_perturb(ctx.grid, "ts", cut, rng, strict=False, mode=mode),
+                    five=_perturb(ctx.five, "end", cut, rng, strict=True, mode=mode),
+                    spy_grid=_perturb(ctx.spy_grid, "ts", cut, rng, strict=False, mode=mode),
+                )
+                actual = sorted(signal_key(s) for s in detect(perturbed) if s["decision_ts"] <= cut)
+                assert actual == expected, f"signals decided by {cut} changed after perturbing later bars (mode={mode}, seed={seed})"
     return base
