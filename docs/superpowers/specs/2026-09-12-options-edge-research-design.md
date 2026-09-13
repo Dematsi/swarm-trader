@@ -101,12 +101,20 @@ New dependencies: `duckdb`, `pyarrow`, `exchange-calendars`.
   `FB` before 2022-06-09; the zip's pre-rename `META` rows are an unrelated security and are
   excluded.
 - **Tail.** 2026-06-18 through the freeze date comes from Alpaca `/v2/stocks/bars?timeframe=1Min&feed=sip`.
-  On overlapping days, zip and Alpaca must agree exactly (validation check).
+  On overlapping days, the zip and Alpaca are checked against the tolerance bars in §5.7.
 - **Bad prints.** Flag a 1-min bar's high, low or close when it deviates from the median of the
   **previous** 15 closes by more than max(8 × MAD, 3%). Flagged extremes are replaced by the bar
   body clipped into that band, which also handles single-print outlier bars where
-  open = high = low = close. Clean values are used for level and feature computation. Raw values
-  are kept.
+  open = high = low = close. Raw values are kept.
+  **Provisional:** the M1 run showed this causal filter clips genuine fast moves, and it can place
+  clean highs/lows outside the traded range (e.g. META 2025-04-09 13:26 ET, AMZN earnings
+  after-hours). Clean values must not feed features until the M3-0 data-readiness gate (§11)
+  reworks cleaning:
+  - the clean range is confined to the raw bar
+  - a print-quality guard (low transactions/volume) is required before flagging
+  - a two-sided (non-causal) filter is used for levels consumed after the session ends (prior-day
+    high/low/close, ATR history), with the causal filter kept only for intraday features
+  - an explicit `close_clean` decision is made
   Pre-market bars count toward pre-market high/low only when volume ≥ 100 shares.
 - **Splits.** Detect candidates where the RTH open / prior RTH close ratio is within 3% of a split
   ratio (2, 3, 4, 5, 10, 15, 20 or reciprocals) and the day's volume ratio confirms. Produce
@@ -165,7 +173,10 @@ and exit decision to validate fill assumptions (§9.4).
 
 ### 5.6 Cost model (`costs.py`)
 - **Source:** sibling DB `contract_greeks` (Schwab), 2026-08-21 → freeze. Uses `bid`, `ask`,
-  `underlying_spot`, `strike`, `dte`, `bucket_time`; rows need `bid > 0` and `ask > bid`.
+  `underlying_spot`, `strike`, `dte`, `bucket_time`; rows need `bid > 0` and `ask > bid`. The
+  query samples quarter-hour buckets (`bucket_time` minute % 15 = 0) and filters the calibration
+  window on `snapshot_time`. The coarsest backoff level (underlying only) blends DTE buckets;
+  before M5, surface the level used or refuse to go below underlying × DTE.
 - **Half-spread `h`** = median of (ask − bid)/2 in **dollars**, grouped by underlying × DTE bucket
   {0, 1–2, 3–7, 8+} × moneyness {ITM > 0.5%, ATM ±0.5%, OTM 0.5–2%, OTM > 2%} × premium bucket
   {<1, 1–3, 3–10, ≥10} × time-of-day {09:30–10:00, 10:00–15:00, 15:00–close}. Sparse cells
@@ -393,6 +404,7 @@ It also reports:
 |---|---|---|
 | M1 | Package skeleton, safe Alpaca client, calendar/events, stock ingest (zip + tail), splits, bad prints, validation report | — |
 | M2 | Cost model from Schwab quotes + stress, report | — |
+| M3-0 | **Data-readiness gate (blocks M3).** Rework bad-print cleaning (§5.1 provisional note) and re-ingest; add `FRED_API_KEY`, rebuild events, spot-check FRED release dates per series; complete the earnings IR spot-check (≥10 events); add a split volume-adjustment helper (reciprocal factor); route all feature data through `store.load_stock_minutes`; regenerate the M1 report | **User confirms the gate** |
 | M3 | Features + 9 setups + stage-1 evaluation (dev period), report | **User reviews which setups pass** |
 | M4 | Ladders + on-demand 1-min option bars for passing setups, validation vs bot data, coverage report | — |
 | M5 | Stage-2 engine, dev-period grid, edge-decay, event modes, stress, report | **User reviews finalists** |
