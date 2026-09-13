@@ -52,3 +52,45 @@ def test_cost_model_covers_universe():
     for symbol in UNIVERSE:
         h, level = model.base_half_spread(symbol, 2, 0.0, 2.0, time(11, 0))
         assert 0.005 <= h < 1.0 and level >= 1, symbol
+
+
+def _bar(symbol, iso_ts):
+    import pandas as pd
+
+    from src.options_research.store import load_stock_minutes
+
+    ts = pd.Timestamp(iso_ts)
+    day = ts.tz_convert("America/New_York").date()
+    minutes = load_stock_minutes([symbol], day, day)
+    return minutes[minutes["ts"] == ts].iloc[0]
+
+
+def test_clean_values_never_outside_raw_bar():
+    import duckdb
+
+    pattern = (lake_root() / "stock_1m" / "*" / "*" / "*.parquet").as_posix()
+    con = duckdb.connect()
+    bad = con.execute(
+        f"SELECT count(*) FROM read_parquet('{pattern}', union_by_name=true) "
+        "WHERE high_clean > high + 1e-9 OR low_clean < low - 1e-9 OR low_clean > high_clean + 1e-9"
+    ).fetchone()[0]
+    assert bad == 0
+
+
+def test_known_isolated_prints_are_cleaned():
+    meta = _bar("META", "2023-02-01T23:15:00Z")
+    assert meta["bad_low"] and abs(meta["low_clean"] - 182.75) <= 0.02
+    googl = _bar("GOOGL", "2024-04-25T22:54:00Z")
+    assert googl["bad_low"] and abs(googl["low_clean"] - 174.80) <= 0.02
+    qqq = _bar("QQQ", "2022-05-09T18:58:00Z")
+    assert qqq["bad_high"] and abs(qqq["high_clean"] - 299.67) <= 0.02
+    iwm = _bar("IWM", "2023-03-17T21:53:00Z")
+    assert iwm["bad_high"] and abs(iwm["high_clean"] - 171.77) <= 0.02
+
+
+def test_genuine_moves_keep_raw_values():
+    meta = _bar("META", "2022-04-27T17:01:00Z")
+    assert not meta["bad_low"] and meta["low_clean"] == meta["low"] == 169.0
+    amzn = _bar("AMZN", "2022-10-27T20:01:00Z")
+    assert not amzn["bad_low"] and not amzn["bad_high"]
+    assert amzn["low_clean"] == amzn["low"] and amzn["high_clean"] == amzn["high"]

@@ -50,9 +50,13 @@ uv run pytest -m integration tests/options_research   # real-data checks (zip, l
 Loaders in `store.py` refuse holdout dates (>= 2026-01-02) unless `holdout=True`, which is
 reserved for validation, split detection and cost calibration.
 
-**Do not use `high_clean`/`low_clean` for features yet.** The M1 run showed the causal bad-print
-filter clips genuine fast moves and can place clean values outside the traded range; the M3-0
-data-readiness gate (spec §11) must rework cleaning first. Use raw OHLC until then.
+**Clean columns are hindsight values.** `rebuild-clean` flags only isolated off-market prints (≤3
+off-exchange trades beyond a two-sided band, confirmed from Alpaca SIP trades) and sets
+`high_clean`/`low_clean` to the most extreme in-band traded price. Use clean columns only for values
+read after the window closes (prior-day high/low/close, ATR history, pre-market high/low at or after
+09:30). Intraday regular-hours features use raw OHLC. Run
+`uv run python -m src.options_research rebuild-clean` (phases `scan`, `confirm`, `rewrite`) after
+any new ingest; the audit trail is in `data/options_lake/quality/print_checks.parquet`.
 
 `tests/test_api_rate_limiting.py` fails at collection upstream: it imports `_make_api_request`,
 which no longer exists after the switch to the free data layer. The other 37 tests (all under
