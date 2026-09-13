@@ -20,8 +20,10 @@ costs, with **entry and exit timing modeled as carefully as possible**.
 **Out of scope (later phases)**
 - Debit vertical spreads (phase 2; needs Level 3 and confirmed multi-leg support).
 - Setups built specifically around events (e.g. trading the range after the FOMC release).
-- Paper or live order execution. Position sizing and portfolio constraints are **not** part of
-  edge validation. They are evaluated separately in **M5b**, after finalists are chosen (§11).
+- Live order execution. Paper order execution is only allowed in **M7** (forward paper test),
+  which gets its own design spec and safety review before any code is written.
+- Position sizing and portfolio constraints are **not** part of edge validation. They are
+  evaluated separately in **M5b**, after finalists are chosen (§11).
 - LLM agents. This work is deterministic and doesn't touch `src/agents` or the root trading
   scripts.
 
@@ -395,6 +397,14 @@ expected number of false passes under the null.
 - Still mean > 0 **excluding the 5 best days**.
 - Mean > 0 at L = 1 minute (timing robustness).
 
+These are deliberately stricter than a plain t-test at p < 0.05:
+- Stage 1's t ≥ 3.0 is about p ≈ 0.001, which allows for the number of setups tested.
+- Stage 2's 95% CI lower bound > 0 is a one-sided p < 0.025.
+- Both use day-block resampling, so trades clustered on the same day aren't counted as
+  independent evidence.
+- Costs (§5.6) are applied before any test, and the stress checks above repeat the test under
+  worse fills.
+
 **Finalists** are passing configurations, capped at the top 3 by CI lower bound per setup.
 For each finalist:
 - Tick-trade fill validation: the median absolute difference between the modeled entry/exit price
@@ -447,8 +457,9 @@ It also reports:
 | M3 | Features + 9 setups + stage-1 evaluation (dev period), report | **User reviews which setups pass** |
 | M4 | Ladders + on-demand 1-min option bars for passing setups, validation vs bot data, coverage report | — |
 | M5 | Stage-2 engine, dev-period grid, edge-decay, event modes, stress, report | **User reviews finalists** |
-| M5b | **Portfolio simulation of finalists.** Inputs: account size, risk per trade sized on premium at risk (stop + slippage buffer, capped at full premium), max concurrent positions, max trades/day, daily loss stop, correlated-exposure cap (SPY/QQQ/IWM/megacaps same direction). Outputs: equity curve, max drawdown, worst day, probability of breaching a drawdown limit, whole-contract feasibility. Reported at $25k/$50k/$100k and 0.5%/1%/2% until the user picks values. Dev period only. | **User picks sizing parameters** |
-| M6 | Tick-trade fill validation for finalists + single holdout run, final report | **User decision on phase 2 (verticals)** |
+| M5b | **Portfolio simulation of finalists.** Inputs: account size, risk per trade sized on premium at risk (stop + slippage buffer, capped at full premium), max concurrent positions, max trades/day, daily loss stop, correlated-exposure cap (SPY/QQQ/IWM/megacaps same direction). Outputs: equity curve, max drawdown, worst day, probability of breaching a drawdown limit, whole-contract feasibility. Reported at $25k/$50k/$100k and 0.5%/1%/2% until the user picks values. Dev period only.<br><br>**Monte Carlo (block bootstrap).** Method:<br>• Resample whole trading days of the finalists' dev-period trades in blocks of 5 consecutive trading days (a moving block bootstrap). This keeps same-day correlation across tickers and short streaks.<br>• Build 10,000 paths of 252 trading days, applying the sizing rules and whole-contract rounding on each path.<br>• Run it twice: base costs, and a stress run using the 1.5× spread and L = 1 minute trade returns.<br><br>Outputs:<br>• terminal-equity percentiles<br>• max-drawdown percentiles (50th, 95th, 99th)<br>• longest losing streak and time to recover<br>• probability of breaching the drawdown limit<br>• **risk of ruin**, where ruin means equity falls to 50% of the starting account or can no longer fund one contract<br><br>Pass rule at the chosen sizing, stress run:<br>• 0 ruin paths out of 10,000. A true ruin rate of exactly 0% can't be shown, so the report also gives the 95% upper bound, about 0.03% by the rule of three.<br>• Probability of breaching the drawdown limit ≤ 5%.<br><br>A sizing that fails is reduced, not accepted. | **User picks sizing parameters, ruin level and drawdown limit** |
+| M6 | Tick-trade fill validation for finalists + single holdout run, final report | **User decision on phase 2 (verticals) and whether to start M7** |
+| M7 | **Forward paper test of holdout-passing finalists.** Frozen config (hash from the ledger) at M5b sizing, running on the Alpaca **paper** account with the paper keys `ALPACA_API_KEY`/`ALPACA_API_SECRET`, never the live-host data keys. It needs its own spec and safety review first: order module separate from `alpaca_data.py`, paper base URL hard-pinned, kill switch, daily loss stop, 0DTE cutoffs (§7.5).<br><br>Runs at least 40 trading days **and** at least 50 trades, whichever ends later. It logs signal time, NBBO at decision, order and fill for every trade.<br><br>Alpaca paper fills aren't real fills. Slippage is therefore measured against the logged NBBO and the §5.6 model, not taken from paper fills. The run also confirms stop-order trigger semantics (§12).<br><br>**Pass:**<br>• mean return per trade after modeled costs > 0<br>• realized per-trade mean not below the lower bound of the 90% bootstrap interval of the dev-period mean (edge-decay check)<br>• median slippage vs NBBO ≤ modeled cost<br>• no drawdown beyond the M5b 95th percentile | **User decision on live trading (size and start)** |
 
 ## 12. Assumptions to confirm or calibrate
 | Item | Default | Revisit when |
@@ -464,3 +475,6 @@ It also reports:
 | Level 3 / multi-leg support | Unconfirmed | Before phase 2 |
 | Account size | Undecided; M5b reports $25k / $50k / $100k | User decision at M5b |
 | Risk per trade | Undecided; M5b reports 0.5% / 1% / 2% of account (premium at risk) | User decision at M5b |
+| Ruin level / drawdown limit | Ruin = 50% of starting equity or can't fund one contract; drawdown limit 20% | User decision at M5b |
+| Monte Carlo block length | 5 trading days, 10,000 × 252-day paths | Fixed before M5b runs (pre-registered) |
+| M7 paper-test length | ≥ 40 trading days and ≥ 50 trades | User decision at M6 |
