@@ -67,6 +67,11 @@ def adjustment_factors(splits: pd.DataFrame, symbol: str, days: pd.Series) -> pd
     return factors
 
 
+def volume_adjustment_factors(splits: pd.DataFrame, symbol: str, days: pd.Series) -> pd.Series:
+    """Multiply raw volumes by this factor to express pre-split volume in post-split shares."""
+    return 1.0 / adjustment_factors(splits, symbol, days)
+
+
 def write_splits(df: pd.DataFrame, root: Path | None = None) -> Path:
     path = (root or lake_root()) / "corporate_actions" / "splits.parquet"
     path.parent.mkdir(parents=True, exist_ok=True)

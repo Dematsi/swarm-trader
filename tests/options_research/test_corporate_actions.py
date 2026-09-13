@@ -1,6 +1,7 @@
 from datetime import date, timedelta
 
 import pandas as pd
+import pytest
 
 from src.options_research.corporate_actions import (
     EXPECTED_SPLITS,
@@ -8,6 +9,7 @@ from src.options_research.corporate_actions import (
     daily_rth_summary,
     detect_splits,
     load_splits,
+    volume_adjustment_factors,
     write_splits,
 )
 
@@ -64,3 +66,10 @@ def test_write_and_load_splits_roundtrip(tmp_path):
     path = write_splits(splits, root=tmp_path)
     assert path == tmp_path / "corporate_actions" / "splits.parquet"
     assert load_splits(root=tmp_path).to_dict("records") == splits.to_dict("records")
+
+
+def test_volume_adjustment_factor_is_reciprocal_before_split_day():
+    splits = pd.DataFrame([{"symbol": "NVDA", "day": date(2024, 6, 10), "ratio": 10.0, "factor": 0.1}])
+    days = pd.Series([date(2024, 6, 7), date(2024, 6, 10), date(2024, 6, 11)])
+    assert volume_adjustment_factors(splits, "NVDA", days).tolist() == pytest.approx([10.0, 1.0, 1.0])
+    assert volume_adjustment_factors(splits, "AAPL", days).tolist() == [1.0, 1.0, 1.0]
