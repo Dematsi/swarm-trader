@@ -54,8 +54,9 @@ def load_stock_minutes(
     `bad_high`/`bad_low`/`high_clean`/`low_clean` are hindsight columns (spec §5.1): they are computed from
     bars *after* each bar (a centered window plus a snap-back check), so the value at bar i can depend on
     bars that come later in the session. Pass `clean=True` to include them, and only to read a level once
-    the relevant window has closed (e.g. prior-day high/low/close, ATR history, or a pre-market high/low
-    read at/after 09:30). Intraday features must use raw OHLC and should leave `clean=False` (the default).
+    the relevant window has closed (e.g. prior-day high/low, ATR history, or a pre-market high/low read
+    at/after 09:37, when the last pre-market bar's window is complete). Prior-day close is the raw close.
+    Intraday features must use raw OHLC and should leave `clean=False` (the default).
     """
     guard_period(start, end, holdout)
     columns = [c for c in STOCK_COLUMNS if clean or c not in HINDSIGHT_COLUMNS]
