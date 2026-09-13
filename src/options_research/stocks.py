@@ -21,6 +21,24 @@ STOCK_COLUMNS = RAW_COLUMNS + ["bad_high", "bad_low", "bad_close", "high_clean",
 _FIRST_MINUTE = 4 * 60    # 04:00 ET
 _END_MINUTE = 20 * 60     # 20:00 ET (exclusive)
 
+TICKER_ALIASES: dict[str, tuple[tuple[str, date], ...]] = {
+    # Facebook traded as FB until the 2022-06-09 rename; the zip's pre-rename "META" rows are an unrelated security.
+    "META": (("FB", date(2022, 6, 9)),),
+}
+
+
+def zip_source_symbols(tickers: Iterable[str], day: date) -> dict[str, str]:
+    """Map the ticker string used in that day's zip rows -> our universe symbol."""
+    mapping: dict[str, str] = {}
+    for ticker in tickers:
+        source = ticker
+        for old, until in TICKER_ALIASES.get(ticker, ()):
+            if day < until:
+                source = old
+                break
+        mapping[source] = ticker
+    return mapping
+
 
 def normalize_minutes(raw: pd.DataFrame, source: str) -> pd.DataFrame:
     if raw.empty:
@@ -48,11 +66,13 @@ def zip_minute_members(zip_path: Path) -> dict[date, str]:
 
 
 def read_zip_day(zip_path: Path, member: str, tickers: Iterable[str]) -> pd.DataFrame:
-    wanted = set(tickers)
+    day = date.fromisoformat(member.rsplit("/", 1)[1][:10])
+    mapping = zip_source_symbols(tickers, day)
     with zipfile.ZipFile(zip_path) as zf, zf.open(member) as raw, gzip.GzipFile(fileobj=raw) as gz:
         frame = pd.read_csv(gz, usecols=MINUTE_COLUMNS, dtype={"ticker": "string"})
-    frame = frame[frame["ticker"].isin(wanted)].rename(columns={"ticker": "symbol"})
-    frame["symbol"] = frame["symbol"].astype(str)
+    frame = frame[frame["ticker"].isin(mapping)].copy()
+    frame["symbol"] = frame["ticker"].map(mapping).astype(str)
+    frame = frame.drop(columns=["ticker"])
     frame["ts"] = pd.to_datetime(frame["window_start"], unit="ns", utc=True)
     return normalize_minutes(frame.drop(columns=["window_start"]), source="zip")
 
@@ -66,11 +86,19 @@ def day_done_path(root: Path, day: date) -> Path:
 
 
 def mark_day_done(root: Path, day: date, tickers: Iterable[str], rows: int) -> None:
-    """Write a JSON marker indicating the day has been fully ingested."""
+    """Write a JSON marker indicating the day has been fully ingested, merging with any existing marker."""
     path = day_done_path(root, day)
     path.parent.mkdir(parents=True, exist_ok=True)
+    existing_tickers: set[str] = set()
+    if path.exists():
+        try:
+            with open(path) as f:
+                existing = json.load(f)
+            existing_tickers = set(existing.get("tickers", []))
+        except (json.JSONDecodeError, KeyError):
+            existing_tickers = set()
     marker = {
-        "tickers": sorted(tickers),
+        "tickers": sorted(existing_tickers | set(tickers)),
         "rows": int(rows),
     }
     with open(path, "w") as f:

@@ -34,4 +34,4 @@
 | SPY          | 1.12 |  0.77 |  0.76 | 0.82 |
 | TSLA         | 1.98 |  2.15 |  1.47 | 1.5  |
 
-Stress multipliers applied in stage 2: h x 1.5 and h x 2.0 (spec ง5.6).
+Stress multipliers applied in stage 2: h x 1.5 and h x 2.0 (spec ยง5.6).

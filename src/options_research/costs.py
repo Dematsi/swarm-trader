@@ -170,7 +170,7 @@ def save_cost_table(df: pd.DataFrame, root: Path | None = None) -> Path:
 def save_calibration(payload: dict, root: Path | None = None) -> Path:
     path = (root or lake_root()) / "costs" / "calibration.json"
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, indent=2, default=str))
+    path.write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
     return path
 
 

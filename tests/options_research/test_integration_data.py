@@ -15,12 +15,13 @@ def test_expected_splits_detected():
     assert EXPECTED_SPLITS <= found
 
 
-def test_nvda_split_day_bad_high_is_flagged():
+def test_nvda_split_day_minutes_are_clean():
     from src.options_research.store import load_stock_minutes
 
     nvda = load_stock_minutes(["NVDA"], date(2024, 6, 10), date(2024, 6, 10))
-    assert nvda["high"].max() > 190
-    assert nvda["high_clean"].max() < 130
+    assert nvda["high"].max() < 130
+    assert not nvda["bad_high"].any()
+    assert not nvda["bad_low"].any()
 
 
 def test_every_ticker_has_zip_and_tail_coverage():
@@ -38,7 +39,9 @@ def test_zip_matches_alpaca_on_sampled_days():
     assert overlap
     for day, result in overlap.items():
         assert result["compared"] > 1000, day
-        assert result["ohlc_mismatch"] / result["compared"] < 0.001, (day, result)
+        assert result["rth_compared"] > 1000, day
+        assert result["rth_ohlc_mismatch"] / result["rth_compared"] < 0.001, (day, result)
+        assert result["ohlc_mismatch"] / result["compared"] < 0.01, (day, result)
 
 
 def test_cost_model_covers_universe():

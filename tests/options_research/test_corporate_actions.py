@@ -20,7 +20,7 @@ def daily_frame(symbol, closes, volumes, opens=None, start=date(2024, 5, 1)):
 def test_expected_splits_listed():
     assert EXPECTED_SPLITS == frozenset({
         ("NVDA", date(2021, 7, 20), 4.0), ("AMZN", date(2022, 6, 6), 20.0), ("GOOGL", date(2022, 7, 18), 20.0),
-        ("TSLA", date(2022, 8, 25), 3.0), ("NVDA", date(2024, 6, 10), 10.0),
+        ("TSLA", date(2022, 8, 25), 3.0), ("NVDA", date(2024, 6, 10), 10.0), ("NFLX", date(2025, 11, 17), 10.0),
     })
 
 

@@ -79,4 +79,9 @@ def test_validate_zip_overlap_reads_lake_and_compares(tmp_path):
     write_day(lake_rows, day, tmp_path)
     pages = {None: {"bars": {"SPY": [bar("2025-06-11T13:30:00Z")]}, "next_page_token": None}}
     result = validate_zip_overlap(client_for(pages), [day], tickers=("SPY",), root=tmp_path)
-    assert result == {"2025-06-11": {"compared": 1, "ohlc_mismatch": 0, "volume_mismatch": 0, "zip_only": 0, "alpaca_only": 0}}
+    assert result == {
+        "2025-06-11": {
+            "compared": 1, "ohlc_mismatch": 0, "volume_mismatch": 0, "zip_only": 0, "alpaca_only": 0,
+            "rth_compared": 1, "rth_ohlc_mismatch": 0, "rth_volume_mismatch": 0, "rth_zip_only": 0, "rth_alpaca_only": 0,
+        }
+    }

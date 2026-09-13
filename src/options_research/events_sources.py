@@ -110,7 +110,7 @@ def write_events(df: pd.DataFrame, notes: dict, root: Path | None = None) -> Pat
     folder.mkdir(parents=True, exist_ok=True)
     path = folder / "events.parquet"
     df.to_parquet(path, index=False)
-    (folder / "events_notes.json").write_text(json.dumps(notes, indent=2))
+    (folder / "events_notes.json").write_text(json.dumps(notes, indent=2), encoding="utf-8")
     return path
 
 

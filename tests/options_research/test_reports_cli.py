@@ -69,6 +69,11 @@ def test_write_report(tmp_path):
     assert path == tmp_path / "m1_data_foundation.md" and path.read_text() == "# hi\n"
 
 
+def test_write_report_is_utf8(tmp_path):
+    path = write_report("m1_data_foundation", "a — b §", directory=tmp_path)
+    assert path.read_bytes().decode("utf-8") == "a — b §"
+
+
 def test_cli_report_commands_write_files(tmp_path, monkeypatch):
     seed_lake(tmp_path / "lake")
     monkeypatch.setenv("OPTIONS_LAKE_ROOT", str(tmp_path / "lake"))

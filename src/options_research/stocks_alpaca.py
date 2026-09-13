@@ -20,6 +20,8 @@ from src.options_research.stocks import (
 )
 
 STOCK_BARS_URL = "https://data.alpaca.markets/v2/stocks/bars"
+_RTH_START_MINUTE = 9 * 60 + 30   # 09:30 ET
+_RTH_END_MINUTE = 16 * 60         # 16:00 ET (exclusive)
 
 
 def _utc_z(moment: datetime) -> str:
@@ -90,6 +92,15 @@ def compare_sources(zip_df: pd.DataFrame, alpaca_df: pd.DataFrame) -> dict:
     }
 
 
+def _rth_only(df: pd.DataFrame) -> pd.DataFrame:
+    """Filter to regular-session bars (09:30 ET <= minute-of-day < 16:00 ET)."""
+    if df.empty:
+        return df
+    et = pd.to_datetime(df["ts"], utc=True).dt.tz_convert(ET)
+    minute_of_day = et.dt.hour * 60 + et.dt.minute
+    return df[(minute_of_day >= _RTH_START_MINUTE) & (minute_of_day < _RTH_END_MINUTE)]
+
+
 def validate_zip_overlap(
     client: AlpacaDataClient,
     days: Iterable[date],
@@ -103,5 +114,9 @@ def validate_zip_overlap(
     for day in days:
         files = [day_path(root, t, day) for t in tickers if day_path(root, t, day).exists()]
         zip_df = pd.concat([pd.read_parquet(f) for f in files], ignore_index=True) if files else pd.DataFrame(columns=["symbol", "ts", "open", "high", "low", "close", "volume"])
-        results[day.isoformat()] = compare_sources(zip_df, fetch_alpaca_day(client, tickers, day))
+        alpaca_df = fetch_alpaca_day(client, tickers, day)
+        result = compare_sources(zip_df, alpaca_df)
+        rth_result = compare_sources(_rth_only(zip_df), _rth_only(alpaca_df))
+        result.update({f"rth_{key}": value for key, value in rth_result.items()})
+        results[day.isoformat()] = result
     return results

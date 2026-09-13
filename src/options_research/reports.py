@@ -14,7 +14,7 @@ from src.options_research.events_sources import load_events
 
 
 def _read_json(path: Path) -> dict:
-    return json.loads(path.read_text()) if path.exists() else {}
+    return json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
 
 
 def _stock_aggregates(root: Path) -> pd.DataFrame:
@@ -142,5 +142,5 @@ def write_report(name: str, text: str, directory: Path | None = None) -> Path:
     directory = directory or reports_dir()
     directory.mkdir(parents=True, exist_ok=True)
     path = directory / f"{name}.md"
-    path.write_text(text)
+    path.write_text(text, encoding="utf-8")
     return path

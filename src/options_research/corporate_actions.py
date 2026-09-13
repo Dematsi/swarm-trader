@@ -18,6 +18,7 @@ EXPECTED_SPLITS: frozenset[tuple[str, date, float]] = frozenset({
     ("GOOGL", date(2022, 7, 18), 20.0),
     ("TSLA", date(2022, 8, 25), 3.0),
     ("NVDA", date(2024, 6, 10), 10.0),
+    ("NFLX", date(2025, 11, 17), 10.0),
 })
 SPLIT_COLUMNS = ["symbol", "day", "ratio", "factor"]
 

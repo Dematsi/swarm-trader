@@ -14,6 +14,7 @@ from src.options_research.stocks import (
     normalize_minutes,
     read_zip_day,
     zip_minute_members,
+    zip_source_symbols,
 )
 
 # 2025-06-11 is EDT (UTC-4): 04:00 ET = 08:00Z, 09:30 ET = 13:30Z, 20:00 ET = 00:00Z next day
@@ -159,3 +160,32 @@ def test_ingest_zip_process_pool_path(tmp_path):
     # Verify both days are marked done
     assert is_day_done(root, date(2025, 6, 11), ("SPY",))
     assert is_day_done(root, date(2025, 6, 12), ("SPY",))
+
+
+def test_zip_source_symbols_maps_fb_before_rename():
+    assert zip_source_symbols(["META", "SPY"], date(2022, 6, 8)) == {"FB": "META", "SPY": "SPY"}
+    assert zip_source_symbols(["META", "SPY"], date(2022, 6, 9)) == {"META": "META", "SPY": "SPY"}
+
+
+def test_read_zip_day_reads_fb_rows_as_meta_before_rename(tmp_path):
+    rows = [
+        ("FB", 500, 329.5, 330.0, 330.6, 329.5, ns("2022-01-11T14:30:00Z"), 40),  # 09:30 ET -> real Facebook row
+        ("META", 500, 13.9, 14.0, 14.2, 13.9, ns("2022-01-11T14:30:00Z"), 40),    # unrelated pre-rename ticker collision
+    ]
+    frame = pd.DataFrame(rows, columns=["ticker", "volume", "open", "close", "high", "low", "window_start", "transactions"])
+    buf = io.BytesIO()
+    with gzip.GzipFile(fileobj=buf, mode="wb") as gz:
+        gz.write(frame.to_csv(index=False).encode())
+    path = tmp_path / "eq.zip"
+    with zipfile.ZipFile(path, "w") as zf:
+        zf.writestr("minute_aggs/2022/01/2022-01-11.csv.gz", buf.getvalue())
+
+    df = read_zip_day(path, "minute_aggs/2022/01/2022-01-11.csv.gz", ["META"])
+    assert df["symbol"].unique().tolist() == ["META"]
+    assert df["close"].tolist() == [330.0]
+
+
+def test_mark_day_done_merges_tickers(tmp_path):
+    mark_day_done(tmp_path, date(2025, 6, 11), ["SPY"], 2)
+    mark_day_done(tmp_path, date(2025, 6, 11), ["META"], 1)
+    assert is_day_done(tmp_path, date(2025, 6, 11), ["SPY", "META"])
