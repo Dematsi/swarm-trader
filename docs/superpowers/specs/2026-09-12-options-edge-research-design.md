@@ -404,7 +404,7 @@ It also reports:
 |---|---|---|
 | M1 | Package skeleton, safe Alpaca client, calendar/events, stock ingest (zip + tail), splits, bad prints, validation report | — |
 | M2 | Cost model from Schwab quotes + stress, report | — |
-| M3-0 | **Data-readiness gate (blocks M3).** Rework bad-print cleaning (§5.1 provisional note) and re-ingest; add `FRED_API_KEY`, rebuild events, spot-check FRED release dates per series; complete the earnings IR spot-check (≥10 events); add a split volume-adjustment helper (reciprocal factor); route all feature data through `store.load_stock_minutes`; regenerate the M1 report | **User confirms the gate** |
+| M3-0 | **Data-readiness gate (blocks M3).** Rework bad-print cleaning (§5.1 provisional note) and re-ingest; add `FRED_API_KEY`, rebuild events, spot-check FRED release dates per series; complete the earnings IR spot-check (≥10 events; **done by the user 2026-09-13**, all 10 sampled dates verified); add a split volume-adjustment helper (reciprocal factor); route all feature data through `store.load_stock_minutes`; regenerate the M1 report | **User confirms the gate** |
 | M3 | Features + 9 setups + stage-1 evaluation (dev period), report | **User reviews which setups pass** |
 | M4 | Ladders + on-demand 1-min option bars for passing setups, validation vs bot data, coverage report | — |
 | M5 | Stage-2 engine, dev-period grid, edge-decay, event modes, stress, report | **User reviews finalists** |
