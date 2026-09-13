@@ -75,6 +75,10 @@ def classify_print(trades: list[dict], side: str, reference: float, band: float)
 
 
 def apply_clean(day: pd.DataFrame, checks: pd.DataFrame | None) -> pd.DataFrame:
+    """Spec §5.1: a clean value is the most extreme in-band traded price, and is empty (NaN) when no
+    in-band trade exists on that side. Clean values never lie outside the raw bar and are never invented
+    by clipping a confirmed value into a bar that can't contain it.
+    """
     out = day.copy()
     out["bad_high"] = False
     out["bad_low"] = False
@@ -86,13 +90,27 @@ def apply_clean(day: pd.DataFrame, checks: pd.DataFrame | None) -> pd.DataFrame:
             if len(matches) == 0:
                 continue
             i = matches[0]
-            out.loc[i, f"bad_{check.side}"] = True
-            column = f"{check.side}_clean"
+            side = check.side
+            out.loc[i, f"bad_{side}"] = True
+            low = float(out.loc[i, "low"])
+            high = float(out.loc[i, "high"])
+            reference = float(check.reference)
+            band = float(check.band)
+            # Whole bar beyond the band: the bar is only the bad print, so neither side has a trustworthy value.
+            beyond_band = (high < reference - band) if side == "low" else (low > reference + band)
+            if beyond_band:
+                out.loc[i, ["high_clean", "low_clean"]] = np.nan
+                continue
+            column = f"{side}_clean"
             value = check.clean_value
             if value is None or pd.isna(value):
                 out.loc[i, column] = np.nan
             else:
-                out.loc[i, column] = float(np.clip(float(value), out.loc[i, "low"], out.loc[i, "high"]))
+                value = float(value)
+                if value < low - 1e-9 or value > high + 1e-9:
+                    out.loc[i, column] = np.nan
+                else:
+                    out.loc[i, column] = value
     inverted = out["high_clean"].notna() & out["low_clean"].notna() & (out["low_clean"] > out["high_clean"])
     out.loc[inverted, ["high_clean", "low_clean"]] = np.nan
     return out

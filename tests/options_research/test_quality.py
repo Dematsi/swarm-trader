@@ -98,6 +98,8 @@ def test_apply_clean_resets_then_applies_isolated_decisions():
     checks = pd.DataFrame({"ts": [day.loc[15, "ts"], day.loc[3, "ts"], day.loc[5, "ts"]],
                            "side": ["low", "high", "low"],
                            "decision": ["isolated", "genuine", "isolated"],
+                           "reference": [183.0, 999.0, 183.0],
+                           "band": [5.49, 1.0, 5.49],
                            "clean_value": [182.75, 999.0, None]})
     out = apply_clean(day, checks)
     assert out.loc[15, "bad_low"] and out.loc[15, "low_clean"] == 182.75
@@ -122,7 +124,8 @@ def test_apply_clean_never_leaves_the_raw_bar_range():
                         "open": mid, "high": mid + rng.rand(n), "low": mid - rng.rand(n), "close": mid})
     picks = rng.choice(n, 40, replace=False)
     checks = pd.DataFrame({"ts": day["ts"].iloc[picks].reset_index(drop=True), "side": rng.choice(["high", "low"], 40),
-                           "decision": "isolated", "clean_value": mid[picks] + rng.randn(40) * 5})
+                           "decision": "isolated", "reference": mid[picks], "band": 5.0,
+                           "clean_value": mid[picks] + rng.randn(40) * 5})
     checks.loc[checks.index[:5], "clean_value"] = np.nan
     out = apply_clean(day, checks)
     hc, lc = out["high_clean"], out["low_clean"]
@@ -136,6 +139,49 @@ def test_apply_clean_inverted_pair_becomes_empty():
     day = day_frame([100.0] * 8)
     t = day.loc[4, "ts"]
     checks = pd.DataFrame({"ts": [t, t], "side": ["high", "low"], "decision": ["isolated", "isolated"],
+                           "reference": [100.0, 100.0], "band": [0.05, 0.05],
                            "clean_value": [99.96, 100.04]})
     out = apply_clean(day, checks)
     assert np.isnan(out.loc[4, "high_clean"]) and np.isnan(out.loc[4, "low_clean"])
+
+
+def test_apply_clean_isolated_single_price_bar_leaves_both_sides_empty():
+    """(a) A whole bar that is only the off-exchange print: the in-band clean_value can't belong to it."""
+    day = day_frame(closes=[153.12], opens=[153.12], highs=[153.12], lows=[153.12])
+    checks = pd.DataFrame({"ts": [day.loc[0, "ts"]], "side": ["low"], "decision": ["isolated"],
+                           "reference": [182.99], "band": [5.49], "clean_value": [182.75]})
+    out = apply_clean(day, checks)
+    assert out.loc[0, "bad_low"]
+    assert np.isnan(out.loc[0, "high_clean"]) and np.isnan(out.loc[0, "low_clean"])
+
+
+def test_apply_clean_in_band_value_outside_bar_but_bar_not_wholly_beyond_band():
+    """(b) The confirmed in-band price doesn't fall inside this bar's raw range: low_clean is empty,
+    but the untouched high side keeps its raw value (the bar itself is not wholly beyond the band)."""
+    day = day_frame(closes=[160.0], opens=[160.0], highs=[184.0], lows=[150.0])
+    checks = pd.DataFrame({"ts": [day.loc[0, "ts"]], "side": ["low"], "decision": ["isolated"],
+                           "reference": [183.0], "band": [5.49], "clean_value": [184.5]})
+    out = apply_clean(day, checks)
+    assert np.isnan(out.loc[0, "low_clean"])
+    assert out.loc[0, "high_clean"] == 184.0
+
+
+def test_apply_clean_isolated_single_price_bar_high_side_mirror():
+    """(c) High-side mirror of (a)."""
+    day = day_frame(closes=[309.35], opens=[309.35], highs=[309.35], lows=[309.35])
+    checks = pd.DataFrame({"ts": [day.loc[0, "ts"]], "side": ["high"], "decision": ["isolated"],
+                           "reference": [299.5], "band": [8.99], "clean_value": [299.67]})
+    out = apply_clean(day, checks)
+    assert out.loc[0, "bad_high"]
+    assert np.isnan(out.loc[0, "high_clean"]) and np.isnan(out.loc[0, "low_clean"])
+
+
+def test_apply_clean_in_bar_value_is_kept_exactly():
+    """(d) An in-bar value is kept exactly, with no clipping change."""
+    day = day_frame(closes=[105.0], opens=[105.0], highs=[110.0], lows=[100.0])
+    checks = pd.DataFrame({"ts": [day.loc[0, "ts"]], "side": ["low"], "decision": ["isolated"],
+                           "reference": [105.0], "band": [3.0], "clean_value": [101.0]})
+    out = apply_clean(day, checks)
+    assert out.loc[0, "bad_low"]
+    assert out.loc[0, "low_clean"] == 101.0
+    assert out.loc[0, "high_clean"] == 110.0

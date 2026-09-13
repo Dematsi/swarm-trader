@@ -4,7 +4,9 @@ import pandas as pd
 import pytest
 
 from src.options_research.stocks import STOCK_COLUMNS, write_day
-from src.options_research.store import HoldoutAccessError, guard_period, load_stock_minutes, stock_minute_files
+from src.options_research.store import HINDSIGHT_COLUMNS, HoldoutAccessError, guard_period, load_stock_minutes, stock_minute_files
+
+DEFAULT_COLUMNS = [c for c in STOCK_COLUMNS if c not in HINDSIGHT_COLUMNS]
 
 
 def lake_day(root, symbol, iso_ts, close):
@@ -46,7 +48,7 @@ def test_loads_filtered_sorted_utc(tmp_path):
     files = stock_minute_files(["SPY", "QQQ"], date(2025, 6, 11), date(2025, 6, 12), root=tmp_path)
     assert len(files) == 3
     df = load_stock_minutes(["SPY", "QQQ"], date(2025, 6, 11), date(2025, 6, 12), root=tmp_path)
-    assert list(df.columns) == STOCK_COLUMNS
+    assert list(df.columns) == DEFAULT_COLUMNS
     assert df[["symbol", "close"]].values.tolist() == [["QQQ", 500.0], ["SPY", 600.0], ["SPY", 601.0]]
     assert str(df["ts"].dt.tz) == "UTC"
     assert df["ts"].iloc[1] == pd.Timestamp("2025-06-11T13:31:00Z")
@@ -54,7 +56,7 @@ def test_loads_filtered_sorted_utc(tmp_path):
 
 def test_empty_range_returns_schema(tmp_path):
     df = load_stock_minutes(["SPY"], date(2025, 1, 2), date(2025, 1, 3), root=tmp_path)
-    assert list(df.columns) == STOCK_COLUMNS and df.empty
+    assert list(df.columns) == DEFAULT_COLUMNS and df.empty
 
 
 def test_loads_mixed_legacy_and_new_schema_files(tmp_path):
@@ -64,4 +66,23 @@ def test_loads_mixed_legacy_and_new_schema_files(tmp_path):
     legacy_path = stock_minute_files(["SPY"], date(2025, 6, 12), date(2025, 6, 12), root=tmp_path)[0]
     legacy.assign(bad_close=False, close=601.0, ts=pd.to_datetime(["2025-06-12T13:30:00Z"], utc=True)).to_parquet(legacy_path, index=False)
     df = load_stock_minutes(["SPY"], date(2025, 6, 11), date(2025, 6, 12), root=tmp_path)
-    assert list(df.columns) == STOCK_COLUMNS and df["close"].tolist() == [600.0, 601.0]
+    assert list(df.columns) == DEFAULT_COLUMNS and df["close"].tolist() == [600.0, 601.0]
+
+
+def test_default_excludes_hindsight_columns(tmp_path):
+    lake_day(tmp_path, "SPY", "2025-06-11T13:30:00Z", 600.0)
+    df = load_stock_minutes(["SPY"], date(2025, 6, 11), date(2025, 6, 11), root=tmp_path)
+    assert list(df.columns) == DEFAULT_COLUMNS
+    for column in HINDSIGHT_COLUMNS:
+        assert column not in df.columns
+
+
+def test_clean_true_includes_hindsight_columns_in_stock_columns_order(tmp_path):
+    lake_day(tmp_path, "SPY", "2025-06-11T13:30:00Z", 600.0)
+    df = load_stock_minutes(["SPY"], date(2025, 6, 11), date(2025, 6, 11), root=tmp_path, clean=True)
+    assert list(df.columns) == STOCK_COLUMNS
+
+
+def test_clean_true_on_empty_range_returns_full_schema(tmp_path):
+    df = load_stock_minutes(["SPY"], date(2025, 1, 2), date(2025, 1, 3), root=tmp_path, clean=True)
+    assert list(df.columns) == STOCK_COLUMNS and df.empty

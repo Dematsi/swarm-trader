@@ -146,7 +146,7 @@ def rewrite_clean_columns(
     by_file: dict[tuple[str, str], pd.DataFrame] = {}
     if not checks.empty:
         for (symbol, session_date), group in checks.groupby(["symbol", "session_date"]):
-            by_file[(symbol, str(pd.Timestamp(session_date).date()))] = group[["ts", "side", "decision", "clean_value"]].reset_index(drop=True)
+            by_file[(symbol, str(pd.Timestamp(session_date).date()))] = group[["ts", "side", "decision", "reference", "band", "clean_value"]].reset_index(drop=True)
     files = lake_day_files(root, symbols)
     jobs = [(f, by_file.get((f.parent.parent.name, f.stem))) for f in files]
     flags = _map(_rewrite_file, jobs, workers)
@@ -179,7 +179,13 @@ def rebuild_clean(
     else:
         checks = pd.read_parquet(checks_path(root))
     current = {_key(s, t, side) for s, t, side in zip(candidates["symbol"], candidates["ts"], candidates["side"])}
-    checks = checks[[_key(s, t, side) in current for s, t, side in zip(checks["symbol"], checks["ts"], checks["side"])]]
+    # A plain list (rather than a boolean Series aligned to checks.index) is misread by pandas as a column
+    # selection when it's empty (0 checks), dropping every column instead of filtering rows.
+    keep = pd.Series(
+        [_key(s, t, side) in current for s, t, side in zip(checks["symbol"], checks["ts"], checks["side"])],
+        index=checks.index, dtype=bool,
+    )
+    checks = checks[keep]
     summary.update({k: int(v) for k, v in checks["decision"].value_counts().items()})
     summary["checked"] = int(len(checks))
     if phase == "confirm":

@@ -105,6 +105,17 @@ def test_rebuild_clean_end_to_end_with_mock_alpaca(tmp_path):
     assert row["low_clean"] == 182.75
 
 
+def test_rebuild_clean_rewrite_phase_with_zero_checks_does_not_crash(tmp_path):
+    seed(tmp_path)
+    candidates_path(tmp_path).parent.mkdir(parents=True, exist_ok=True)
+    pd.DataFrame(columns=CANDIDATES_COLUMNS).to_parquet(candidates_path(tmp_path), index=False)
+    pd.DataFrame(columns=CHECK_COLUMNS).to_parquet(checks_path(tmp_path), index=False)
+
+    summary = rebuild_clean(None, phase="rewrite", root=tmp_path, symbols=["SYM"], workers=1)
+
+    assert summary["flags"] == 0
+
+
 def _boom_to_parquet(self, target, *args, **kwargs):
     """Simulate a crash mid-write: touch the temp file with garbage, then blow up before replace."""
     Path(target).write_bytes(b"garbage")

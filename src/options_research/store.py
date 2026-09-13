@@ -12,6 +12,8 @@ import pandas as pd
 from src.options_research.config import HOLDOUT, lake_root
 from src.options_research.stocks import STOCK_COLUMNS
 
+HINDSIGHT_COLUMNS = ["bad_high", "bad_low", "high_clean", "low_clean"]
+
 
 class HoldoutAccessError(RuntimeError):
     """Raised when a range touching the holdout is requested without holdout=True."""
@@ -45,11 +47,21 @@ def load_stock_minutes(
     end: date,
     holdout: bool = False,
     root: Path | None = None,
+    clean: bool = False,
 ) -> pd.DataFrame:
+    """Load lake minute bars for `symbols` over [start, end] (inclusive), sorted by symbol then ts (UTC).
+
+    `bad_high`/`bad_low`/`high_clean`/`low_clean` are hindsight columns (spec §5.1): they are computed from
+    bars *after* each bar (a centered window plus a snap-back check), so the value at bar i can depend on
+    bars that come later in the session. Pass `clean=True` to include them, and only to read a level once
+    the relevant window has closed (e.g. prior-day high/low/close, ATR history, or a pre-market high/low
+    read at/after 09:30). Intraday features must use raw OHLC and should leave `clean=False` (the default).
+    """
     guard_period(start, end, holdout)
+    columns = [c for c in STOCK_COLUMNS if clean or c not in HINDSIGHT_COLUMNS]
     files = stock_minute_files(symbols, start, end, root=root)
     if not files:
-        return pd.DataFrame(columns=STOCK_COLUMNS)
+        return pd.DataFrame(columns=columns)
     con = duckdb.connect()
     try:
         con.execute("SET TimeZone='UTC'")
@@ -57,4 +69,4 @@ def load_stock_minutes(
     finally:
         con.close()
     frame["ts"] = pd.to_datetime(frame["ts"], utc=True)
-    return frame[STOCK_COLUMNS].reset_index(drop=True)
+    return frame[columns].reset_index(drop=True)
