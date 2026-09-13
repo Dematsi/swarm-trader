@@ -121,13 +121,24 @@ def test_run_stage1_writes_resumable_symbol_files_and_tagged_signals(tmp_path):
     write_lake(tmp_path, sessions_between(START, DAY))
     first = run_stage1(["NVDA"], START, DAY, workers=1, root=tmp_path)
     assert first["computed"] == ["NVDA"] and first["signals"] > 0
-    assert symbol_signals_path("NVDA", tmp_path).exists()
-    signals = load_signals(tmp_path)
+    assert symbol_signals_path("NVDA", tmp_path, START, DAY).exists()
+    signals = load_signals(tmp_path, START, DAY)
     assert list(signals.columns) == STAGE1_COLUMNS
     assert set(signals["day"]) == {DAY}
     assert not signals["near_split"].any() and not signals["event_in_window"].any()
     second = run_stage1(["NVDA"], START, DAY, workers=1, root=tmp_path)
     assert second["computed"] == [] and second["skipped"] == ["NVDA"]
+
+
+def test_run_stage1_recomputes_for_a_different_period(tmp_path):
+    write_lake(tmp_path, sessions_between(START, DAY))
+    first = run_stage1(["NVDA"], START, DAY, workers=1, root=tmp_path)
+    assert first["computed"] == ["NVDA"]
+    other_start = date(2025, 5, 23)
+    second = run_stage1(["NVDA"], other_start, DAY, workers=1, root=tmp_path)
+    assert second["computed"] == ["NVDA"]
+    assert symbol_signals_path("NVDA", tmp_path, START, DAY).exists()
+    assert symbol_signals_path("NVDA", tmp_path, other_start, DAY).exists()
 
 
 def test_run_stage1_refuses_the_holdout(tmp_path):

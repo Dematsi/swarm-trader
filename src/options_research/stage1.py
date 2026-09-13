@@ -39,16 +39,20 @@ EVENT_BEFORE = pd.Timedelta(minutes=15)
 EVENT_AFTER = pd.Timedelta(minutes=70)
 
 
-def stage1_dir(root: Path | None = None) -> Path:
-    return (root or lake_root()) / "signals" / "stage1"
+def _period_key(start: date, end: date) -> str:
+    return f"{start.isoformat()}_{end.isoformat()}"
 
 
-def symbol_signals_path(symbol: str, root: Path | None = None) -> Path:
-    return stage1_dir(root) / f"{symbol}.parquet"
+def stage1_dir(root: Path | None = None, start: date = STAGE1_DEV[0], end: date = STAGE1_DEV[1]) -> Path:
+    return (root or lake_root()) / "signals" / "stage1" / _period_key(start, end)
 
 
-def signals_path(root: Path | None = None) -> Path:
-    return stage1_dir(root) / "signals.parquet"
+def symbol_signals_path(symbol: str, root: Path | None = None, start: date = STAGE1_DEV[0], end: date = STAGE1_DEV[1]) -> Path:
+    return stage1_dir(root, start, end) / f"{symbol}.parquet"
+
+
+def signals_path(root: Path | None = None, start: date = STAGE1_DEV[0], end: date = STAGE1_DEV[1]) -> Path:
+    return stage1_dir(root, start, end) / "signals.parquet"
 
 
 def _write_atomic(frame: pd.DataFrame, path: Path) -> None:
@@ -164,25 +168,25 @@ def _symbol_job(job: tuple) -> str:
     minutes = load_stock_minutes([symbol], start, end, root=root, clean=True)
     spy = minutes if symbol == "SPY" else load_stock_minutes(["SPY"], start, end, root=root)
     frame = signals_for_symbol(symbol, minutes, spy, sessions_between(start, end), load_splits(root))
-    _write_atomic(frame, symbol_signals_path(symbol, root))
+    _write_atomic(frame, symbol_signals_path(symbol, root, start, end))
     return symbol
 
 
 def combine_stage1(symbols, start: date, end: date, root: Path | None = None) -> pd.DataFrame:
-    frames = [pd.read_parquet(symbol_signals_path(s, root)) for s in symbols if symbol_signals_path(s, root).exists()]
+    frames = [pd.read_parquet(symbol_signals_path(s, root, start, end)) for s in symbols if symbol_signals_path(s, root, start, end).exists()]
     frames = [f for f in frames if not f.empty]
     signals = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame(columns=SIGNAL_COLUMNS + OUTCOME_COLUMNS)
     signals["day"] = pd.to_datetime(signals["day"]).dt.date
     sessions = sessions_between(start, end)
     signals = tag_splits(tag_events(signals, load_events(root), sessions), load_splits(root), sessions)
     signals = signals.sort_values(["symbol", "decision_ts", "setup", "direction"]).reset_index(drop=True)[STAGE1_COLUMNS]
-    _write_atomic(signals, signals_path(root))
+    _write_atomic(signals, signals_path(root, start, end))
     return signals
 
 
 def run_stage1(symbols=UNIVERSE, start: date = STAGE1_DEV[0], end: date = STAGE1_DEV[1], workers: int = 4, overwrite: bool = False, root: Path | None = None) -> dict:
     symbols = list(symbols)
-    todo = [s for s in symbols if overwrite or not symbol_signals_path(s, root).exists()]
+    todo = [s for s in symbols if overwrite or not symbol_signals_path(s, root, start, end).exists()]
     jobs = [(s, start, end, root) for s in todo]
     if workers <= 1 or len(jobs) <= 1:
         computed = [_symbol_job(job) for job in jobs]
@@ -193,7 +197,7 @@ def run_stage1(symbols=UNIVERSE, start: date = STAGE1_DEV[0], end: date = STAGE1
     return {"computed": computed, "skipped": [s for s in symbols if s not in todo], "signals": int(len(combined))}
 
 
-def load_signals(root: Path | None = None) -> pd.DataFrame:
-    frame = pd.read_parquet(signals_path(root))
+def load_signals(root: Path | None = None, start: date = STAGE1_DEV[0], end: date = STAGE1_DEV[1]) -> pd.DataFrame:
+    frame = pd.read_parquet(signals_path(root, start, end))
     frame["day"] = pd.to_datetime(frame["day"]).dt.date
     return frame
