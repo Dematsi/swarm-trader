@@ -87,23 +87,30 @@
 
 ## Events
 
-- FRED: skipped: FRED_API_KEY not set
+- FRED: included
 
-| type                   |   2021 |   2022 |   2023 |   2024 |   2025 |   2026 |
-|:-----------------------|-------:|-------:|-------:|-------:|-------:|-------:|
-| consumer_confidence    |      7 |     12 |     12 |     12 |     12 |      8 |
-| earnings_amc           |     18 |     36 |     36 |     36 |     36 |     27 |
-| fomc_decision          |      4 |      8 |      8 |      8 |      8 |      5 |
-| fomc_minutes           |      4 |      8 |      8 |      8 |      9 |      5 |
-| fomc_press_conference  |      4 |      8 |      8 |      8 |      8 |      5 |
-| ism_manufacturing      |      6 |     12 |     12 |     12 |     12 |      9 |
-| ism_services           |      6 |     12 |     12 |     12 |     12 |      9 |
-| month_end              |      7 |     12 |     12 |     12 |     12 |      8 |
-| opex                   |      7 |     12 |     12 |     12 |     12 |      8 |
-| quad_witching          |      3 |      4 |      4 |      4 |      4 |      2 |
-| quarter_end            |      3 |      4 |      4 |      4 |      4 |      2 |
-| russell_reconstitution |      1 |      1 |      1 |      1 |      1 |      1 |
-| vix_expiration         |      6 |     12 |     12 |     12 |     12 |      8 |
+| type                    |   2021 |   2022 |   2023 |   2024 |   2025 |   2026 |
+|:------------------------|-------:|-------:|-------:|-------:|-------:|-------:|
+| consumer_confidence     |      7 |     12 |     12 |     12 |     12 |      8 |
+| cpi                     |      6 |     13 |     13 |     13 |     11 |      9 |
+| earnings_amc            |     18 |     36 |     36 |     36 |     36 |     27 |
+| employment_situation    |      6 |     12 |     11 |     13 |     11 |      8 |
+| fomc_decision           |      4 |      8 |      8 |      8 |      8 |      5 |
+| fomc_minutes            |      4 |      8 |      8 |      8 |      9 |      5 |
+| fomc_press_conference   |      4 |      8 |      8 |      8 |      8 |      5 |
+| gdp                     |     10 |     13 |     13 |     13 |     10 |      9 |
+| ism_manufacturing       |      6 |     12 |     12 |     12 |     12 |      9 |
+| ism_services            |      6 |     12 |     12 |     12 |     12 |      9 |
+| jolts                   |      6 |     12 |     12 |     12 |     11 |      9 |
+| month_end               |      7 |     12 |     12 |     12 |     12 |      8 |
+| opex                    |      7 |     12 |     12 |     12 |     12 |      8 |
+| personal_income_outlays |      7 |     12 |     12 |     11 |     11 |      9 |
+| ppi                     |      6 |     13 |     13 |     13 |     10 |     10 |
+| quad_witching           |      3 |      4 |      4 |      4 |      4 |      2 |
+| quarter_end             |      3 |      4 |      4 |      4 |      4 |      2 |
+| retail_sales            |      6 |     13 |     13 |     13 |     12 |      9 |
+| russell_reconstitution  |      1 |      1 |      1 |      1 |      1 |      1 |
+| vix_expiration          |      6 |     12 |     12 |     12 |     12 |      8 |
 
 ## Earnings spot-check
 
