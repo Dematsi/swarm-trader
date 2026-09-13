@@ -34,11 +34,14 @@ def git_commit(repo: Path = REPO_ROOT) -> str:
 
 
 def dataset_version(start: date, end: date, root: Path | None = None, symbols=UNIVERSE) -> str:
-    """Fingerprint of the lake inputs: stock day-file names and sizes in the period plus the events/splits/print-check/cost files."""
+    """Fingerprint of the lake inputs: stock day-file contents in the period plus the events/splits/print-check/cost files."""
     root = root or lake_root()
     digest = hashlib.sha256()
     for path in stock_minute_files(symbols, start, end, root=root):
-        digest.update(f"{path.parent.parent.name}/{path.name}:{path.stat().st_size}\n".encode("utf-8"))
+        digest.update(f"{path.parent.parent.name}/{path.parent.name}/{path.name}\n".encode("utf-8"))
+        with path.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(1 << 20), b""):
+                digest.update(chunk)
     for parts in _DATASET_INPUTS:
         path = root.joinpath(*parts)
         digest.update(path.read_bytes() if path.exists() else b"missing")

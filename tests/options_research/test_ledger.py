@@ -49,6 +49,21 @@ def test_dataset_version_tracks_lake_inputs(tmp_path):
     assert dataset_version(date(2024, 1, 2), date(2024, 1, 2), root=tmp_path, symbols=["SPY"]) != first
 
 
+def test_dataset_version_changes_when_a_day_file_changes_with_the_same_size(tmp_path):
+    day_file = tmp_path / "stock_1m" / "SPY" / "2024" / "2024-01-02.parquet"
+    day_file.parent.mkdir(parents=True)
+    (tmp_path / "calendar").mkdir()
+    (tmp_path / "calendar" / "events.parquet").write_bytes(b"v1")
+    day_file.write_bytes(b"abc")
+    first = dataset_version(date(2024, 1, 2), date(2024, 1, 2), root=tmp_path, symbols=["SPY"])
+    day_file.write_bytes(b"abd")
+    second = dataset_version(date(2024, 1, 2), date(2024, 1, 2), root=tmp_path, symbols=["SPY"])
+    assert first != second
+    day_file.write_bytes(b"abc")
+    third = dataset_version(date(2024, 1, 2), date(2024, 1, 2), root=tmp_path, symbols=["SPY"])
+    assert third == first
+
+
 def test_git_commit_is_a_sha():
     assert re.fullmatch(r"[0-9a-f]{40}(-dirty)?", git_commit())
 
