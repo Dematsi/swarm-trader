@@ -13,7 +13,7 @@ PACKAGE = Path(pkg.__file__).parent
 
 PARQUET_READERS = {"store.py", "reports.py", "stocks_alpaca.py", "corporate_actions.py", "costs.py", "events_sources.py", "print_checks.py"}
 STOCK_LAKE_TOUCHERS = {"stocks.py", "store.py", "reports.py", "print_checks.py"}
-HINDSIGHT_COLUMN_USERS = {"quality.py", "stocks.py", "store.py", "print_checks.py", "reports.py"}
+HINDSIGHT_COLUMN_USERS = {"quality.py", "stocks.py", "store.py", "print_checks.py", "reports.py", "levels.py"}
 LOOK_AHEAD_IMPORTERS = {"stocks.py", "print_checks.py", "reports.py", "cli.py"}
 
 _PARQUET_READ_MARKERS = ("read_parquet(", "read_table(", "ParquetFile(")
