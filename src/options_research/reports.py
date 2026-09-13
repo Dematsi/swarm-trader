@@ -11,6 +11,7 @@ import pandas as pd
 from src.options_research.config import lake_root, reports_dir
 from src.options_research.corporate_actions import EXPECTED_SPLITS, load_splits
 from src.options_research.events_sources import load_events
+from src.options_research.print_checks import checks_path
 
 
 def _read_json(path: Path) -> dict:
@@ -32,13 +33,14 @@ def _stock_aggregates(root: Path) -> pd.DataFrame:
         return pd.DataFrame(columns=["symbol", "year", "days", "rows", "bad_high", "bad_low"])
     con = duckdb.connect()
     try:
+        con.execute("SET TimeZone='UTC'")
         # Data-validation/report exception to the holdout guard (spec §9.1): aggregates only, no strategy metrics.
         return con.execute(
             f"""
             SELECT symbol, year({_SESSION_DATE_FROM_FILENAME}) AS year,
                    count(DISTINCT filename) AS days, count(*) AS rows,
                    sum(CAST(bad_high AS INTEGER)) AS bad_high, sum(CAST(bad_low AS INTEGER)) AS bad_low
-            FROM read_parquet('{pattern}', filename=true)
+            FROM read_parquet('{pattern}', filename=true, union_by_name=true)
             GROUP BY 1, 2 ORDER BY 1, 2
             """
         ).df()
@@ -48,20 +50,22 @@ def _stock_aggregates(root: Path) -> pd.DataFrame:
 
 def _largest_bad_print_adjustments(root: Path) -> pd.DataFrame:
     pattern = (root / "stock_1m" / "*" / "*" / "*.parquet").as_posix()
-    columns = ["symbol", "session_date", "ts", "high", "high_clean", "low", "low_clean", "close", "bad_close", "volume", "transactions", "adjustment"]
+    columns = ["symbol", "session_date", "ts", "high", "high_clean", "low", "low_clean", "close", "volume", "transactions", "excluded", "adjustment"]
     if not list((root / "stock_1m").glob("*/*/*.parquet")):
         return pd.DataFrame(columns=columns)
     con = duckdb.connect()
     try:
+        con.execute("SET TimeZone='UTC'")
         # Data-validation/report exception to the holdout guard (spec §9.1): aggregates only, no strategy metrics.
         return con.execute(
             f"""
             SELECT symbol, {_SESSION_DATE_FROM_FILENAME} AS session_date, ts, high, high_clean, low, low_clean,
-                   close, bad_close, volume, transactions,
-                   greatest(high - high_clean, low_clean - low) AS adjustment
-            FROM read_parquet('{pattern}', filename=true)
-            WHERE bad_high OR bad_low OR bad_close
-            ORDER BY adjustment DESC
+                   close, volume, transactions,
+                   (high_clean IS NULL OR low_clean IS NULL) AS excluded,
+                   greatest(coalesce(high - high_clean, 0), coalesce(low_clean - low, 0)) AS adjustment
+            FROM read_parquet('{pattern}', filename=true, union_by_name=true)
+            WHERE bad_high OR bad_low
+            ORDER BY excluded DESC, adjustment DESC
             LIMIT 20
             """
         ).df()
@@ -89,6 +93,19 @@ def m1_report(root: Path | None = None) -> str:
     lines += ["## Largest bad-print adjustments", ""]
     flagged = _largest_bad_print_adjustments(root)
     lines.append(flagged.to_markdown(index=False) if not flagged.empty else "No flagged bars.")
+    lines.append("")
+
+    lines += ["## Print checks (trade-level confirmation)", ""]
+    audit = checks_path(root)
+    if audit.exists():
+        # Data-validation/report exception to the holdout guard (spec §9.1): aggregates only, no strategy metrics.
+        checks = pd.read_parquet(audit)
+        years = pd.to_datetime(checks["session_date"]).dt.year
+        lines.append(f"- candidates checked: {len(checks)}")
+        lines.append("- isolated print = at most 3 trades beyond the band, all reported off-exchange (code D); clean value = most extreme in-band traded price; other candidates keep raw values")
+        lines += ["", checks.groupby(["decision", years]).size().unstack(fill_value=0).to_markdown()]
+    else:
+        lines.append("Not run.")
     lines.append("")
 
     lines += ["## Splits", ""]

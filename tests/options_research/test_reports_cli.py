@@ -15,7 +15,7 @@ def seed_lake(root):
     frame = pd.DataFrame({
         "symbol": ["NVDA", "NVDA"], "ts": pd.to_datetime(["2024-06-10T13:30:00Z", "2024-06-10T13:31:00Z"], utc=True),
         "open": [120.0, 121.0], "high": [195.95, 121.5], "low": [119.0, 120.5], "close": [121.0, 121.2],
-        "volume": [100, 200], "transactions": [1, 2], "bad_high": [True, False], "bad_low": [False, False], "bad_close": [False, False],
+        "volume": [100, 200], "transactions": [1, 2], "bad_high": [True, False], "bad_low": [False, False],
         "high_clean": [121.0, 121.5], "low_clean": [119.0, 120.5], "source": ["zip", "zip"],
     })
     write_day(frame, date(2024, 6, 10), root)
@@ -46,7 +46,7 @@ def test_stock_aggregates_counts_session_days_not_utc_dates(tmp_path):
         "ts": pd.to_datetime(["2022-01-11T14:30:00Z", "2022-01-12T00:30:00Z"], utc=True),
         "open": [10.0, 10.0], "high": [10.0, 10.5], "low": [10.0, 9.0], "close": [10.0, 9.5],
         "volume": [100, 100], "transactions": [1, 1],
-        "bad_high": [False, True], "bad_low": [False, False], "bad_close": [False, False],
+        "bad_high": [False, True], "bad_low": [False, False],
         "high_clean": [10.0, 10.0], "low_clean": [10.0, 9.0], "source": ["zip", "zip"],
     })
     write_day(frame, date(2022, 1, 11), tmp_path)
@@ -77,6 +77,9 @@ def test_m1_report_sections(tmp_path):
     assert "skipped: FRED_API_KEY not set" in text
     assert "195.95" in text
     assert "volume differs between vendors" in text
+    assert "## Print checks (trade-level confirmation)" in text
+    assert "Not run." in text  # no audit file seeded
+    assert "+00:00" in text  # adjustments table ts rendered in UTC
 
 
 def test_m2_report_sections(tmp_path):
@@ -105,6 +108,22 @@ def test_cli_report_commands_write_files(tmp_path, monkeypatch):
     assert cli.main(["report-m2"]) == 0
     assert (tmp_path / "reports" / "m1_data_foundation.md").exists()
     assert (tmp_path / "reports" / "m2_cost_model.md").exists()
+
+
+def test_m1_report_summarizes_print_checks(tmp_path):
+    from src.options_research.print_checks import CHECK_COLUMNS, checks_path
+
+    seed_lake(tmp_path)
+    checks = pd.DataFrame([{
+        "symbol": "META", "session_date": pd.Timestamp("2023-02-01").date(), "ts": pd.Timestamp("2023-02-01T23:15:00Z"),
+        "side": "low", "extreme": 153.12, "reference": 182.99, "band": 5.49, "decision": "isolated", "n_trades": 151,
+        "n_outliers": 1, "outlier_prices": [153.12], "outlier_exchanges": ["D"], "outlier_conditions": ["@,T"], "clean_value": 182.75,
+    }], columns=CHECK_COLUMNS)
+    checks_path(tmp_path).parent.mkdir(parents=True, exist_ok=True)
+    checks.to_parquet(checks_path(tmp_path), index=False)
+    text = m1_report(root=tmp_path)
+    section = text.split("## Print checks (trade-level confirmation)")[1].split("## Splits")[0]
+    assert "isolated" in section and "2023" in section
 
 
 def test_cli_requires_a_command():
