@@ -130,3 +130,35 @@ def test_cli_requires_a_command():
     import pytest
     with pytest.raises(SystemExit):
         cli.main([])
+
+
+def test_m3_report_sections():
+    from src.options_research.reports import m3_report
+
+    evaluation = pd.DataFrame([
+        {"setup": "ORB15", "direction": "long", "n": 400, "mean_ret_60": 0.0012, "se": 0.0003, "t": 4.0, "positive_years": 5, "pooled_break_even": 0.0006, "cost_ratio": 2.0, "pass_t": True, "pass_years": True, "pass_cost": True, "pass_n": True, "passed": True},
+        {"setup": "MEANREV", "direction": "short", "n": 120, "mean_ret_60": -0.0001, "se": 0.0004, "t": -0.25, "positive_years": 2, "pooled_break_even": 0.0006, "cost_ratio": -0.17, "pass_t": False, "pass_years": False, "pass_cost": False, "pass_n": False, "passed": False},
+    ])
+    horizons = pd.DataFrame([{"setup": "ORB15", "direction": "long", "n": 400, "mean_ret_30": 0.001, "mean_ret_60": 0.0012, "mean_ret_hard": 0.002, "median_mfe_60": 0.004, "median_mae_60": -0.002}])
+    events = pd.DataFrame([{"setup": "ORB15", "direction": "long", "n_all": 400, "mean_all": 0.0012, "t_all": 4.0, "n_ex_event": 300, "mean_ex_event": 0.0011, "t_ex_event": 3.5}])
+    means = pd.DataFrame({"SPY": [12.0]}, index=pd.MultiIndex.from_tuples([("ORB15", "long")], names=["setup", "direction"]))
+    break_even = pd.Series({"SPY": 6.0}, name="be_frac")
+    ledger = pd.DataFrame([{"stage": "stage1", "config_hash": f"h{i}"} for i in range(18)])
+    text = m3_report(evaluation, horizons, events, means, break_even, {"signals": 520}, ledger)
+    for heading in ("# M3 Stage-1 Report", "## Pass/fail", "## Criteria", "## Horizons", "## With and without event days", "## Mean +60 min return by ticker (bps)", "## Break-even move by ticker (bps, median)", "## Multiple-testing ledger"):
+        assert heading in text
+    assert "Passing setup x direction pairs: 1 of 2: ORB15 long" in text
+    by_ticker = text.split("## Mean +60 min return by ticker (bps)")[1].split("##")[0]
+    assert "SPY" in by_ticker and "12" in by_ticker
+    assert "Expected false passes under the null (one-sided p at t = 3): 0.024" in text
+
+
+def test_stage1_cli_passes_symbols_workers_and_overwrite(monkeypatch, capsys):
+    import src.options_research.stage1 as stage1
+    from src.options_research.cli import main
+
+    calls = []
+    monkeypatch.setattr(stage1, "run_stage1", lambda symbols, workers, overwrite: calls.append((symbols, workers, overwrite)) or {"computed": symbols, "skipped": [], "signals": 0})
+    assert main(["stage1", "--symbols", "SPY,QQQ", "--workers", "1", "--overwrite"]) == 0
+    assert calls == [(["SPY", "QQQ"], 1, True)]
+    assert '"signals": 0' in capsys.readouterr().out

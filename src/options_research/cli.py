@@ -103,6 +103,42 @@ def _cmd_rebuild_clean(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_stage1(args: argparse.Namespace) -> int:
+    from src.options_research import stage1
+
+    symbols = [s.strip().upper() for s in args.symbols.split(",") if s.strip()] if args.symbols else list(UNIVERSE)
+    print(json.dumps(stage1.run_stage1(symbols, workers=args.workers, overwrite=args.overwrite), default=str))
+    return 0
+
+
+def _cmd_report_m3(args: argparse.Namespace) -> int:
+    from src.options_research.config import STAGE1_DEV
+    from src.options_research.costs import load_cost_model
+    from src.options_research.evaluate import EVAL_PARAMS, add_break_even, calibration_spots, evaluate_stage1, event_table, horizon_table, per_ticker_break_even, per_ticker_means
+    from src.options_research.ledger import append_entries, dataset_version, git_commit, read_ledger, stage1_entries
+    from src.options_research.reports import m3_report, write_report
+    from src.options_research.setups import SETUP_PARAMS
+    from src.options_research.stage1 import load_signals
+
+    signals = load_signals()
+    signals = add_break_even(signals, load_cost_model(), calibration_spots(sorted(signals["symbol"].unique())))
+    evaluation = evaluate_stage1(signals)
+    period = f"{STAGE1_DEV[0]}..{STAGE1_DEV[1]}"
+    appended = append_entries(stage1_entries(evaluation, SETUP_PARAMS, EVAL_PARAMS, git_commit(), dataset_version(*STAGE1_DEV), period))
+    summary = {
+        "period": period,
+        "signals": int(len(signals)),
+        "tickers": int(signals["symbol"].nunique()),
+        "sessions with signals": int(signals["day"].nunique()),
+        "signals within one session of a split": int(signals["near_split"].sum()),
+        "ledger entries appended this run": appended,
+    }
+    text = m3_report(evaluation, horizon_table(signals), event_table(signals), per_ticker_means(signals), per_ticker_break_even(signals), summary, read_ledger())
+    path = write_report("m3_stage1", text)
+    print(json.dumps({"report": str(path), "passed": evaluation.loc[evaluation["passed"], ["setup", "direction"]].values.tolist(), "ledger_appended": appended}))
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     load_dotenv(REPO_ROOT / ".env")
     parser = argparse.ArgumentParser(prog="python -m src.options_research")
@@ -136,6 +172,14 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--phase", choices=["all", "scan", "confirm", "rewrite"], default="all")
     p.add_argument("--workers", type=int, default=4)
     p.set_defaults(func=_cmd_rebuild_clean)
+
+    p = sub.add_parser("stage1", help="stage-1 signals + forward outcomes over the development period (resumable per symbol)")
+    p.add_argument("--symbols", default="", help="comma-separated subset of the universe")
+    p.add_argument("--workers", type=int, default=4)
+    p.add_argument("--overwrite", action="store_true")
+    p.set_defaults(func=_cmd_stage1)
+
+    sub.add_parser("report-m3", help="stage-1 evaluation, ledger entries and report").set_defaults(func=_cmd_report_m3)
 
     args = parser.parse_args(argv)
     return args.func(args)

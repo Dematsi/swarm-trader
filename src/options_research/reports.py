@@ -172,6 +172,74 @@ def m2_report(root: Path | None = None) -> str:
     return "\n".join(lines)
 
 
+def _bps(frame: pd.DataFrame, columns: list[str]) -> pd.DataFrame:
+    out = frame.copy()
+    for column in columns:
+        out[column] = (out[column] * 1e4).round(2)
+    return out
+
+
+def m3_report(
+    evaluation: pd.DataFrame,
+    horizons: pd.DataFrame,
+    events: pd.DataFrame,
+    ticker_means: pd.DataFrame,
+    ticker_break_even: pd.Series,
+    summary: dict,
+    ledger: pd.DataFrame,
+) -> str:
+    """Stage-1 report (spec §8.4): pass/fail table first, then diagnostics. Returns in bps; aggregates only."""
+    from src.options_research.ledger import expected_false_passes
+
+    lines = ["# M3 Stage-1 Report (stock-level evaluation, development period)", ""]
+    lines += [f"- {key}: {value}" for key, value in summary.items()]
+    lines += ["", "## Pass/fail (primary horizon: +60 min)", ""]
+    if evaluation.empty:
+        lines.append("No signals.")
+    else:
+        table = _bps(evaluation, ["mean_ret_60", "pooled_break_even"]).rename(columns={"mean_ret_60": "mean_bps", "pooled_break_even": "break_even_bps"})
+        table["t"] = table["t"].round(2)
+        table["cost_ratio"] = table["cost_ratio"].round(2)
+        columns = ["setup", "direction", "n", "mean_bps", "t", "positive_years", "break_even_bps", "cost_ratio", "pass_n", "pass_t", "pass_years", "pass_cost", "passed"]
+        lines.append(table[columns].to_markdown(index=False))
+    passed = evaluation[evaluation["passed"].astype(bool)] if not evaluation.empty else evaluation
+    names = ", ".join(f"{row.setup} {row.direction}" for row in passed.itertuples())
+    lines += ["", f"Passing setup x direction pairs: {len(passed)} of {len(evaluation)}" + (f": {names}" if names else ""), ""]
+    lines += [
+        "## Criteria (spec §8.3, pre-registered)",
+        "",
+        "- Day-block bootstrap t >= 3.0 (10,000 resamples of trading days, seed 20260912)",
+        "- Mean +60 min return > 0 in >= 4 of the 5 calendar years (2021 H2 counts as a year)",
+        "- Mean +60 min return >= 1.5 x pooled break-even move (ATM NEAR option, round-trip half-spreads + fees, delta 0.5)",
+        "- >= 300 signals",
+        "",
+        "## Horizons",
+        "",
+        _bps(horizons, ["mean_ret_30", "mean_ret_60", "mean_ret_hard", "median_mfe_60", "median_mae_60"]).to_markdown(index=False) if not horizons.empty else "No signals.",
+        "",
+        "## With and without event days",
+        "",
+        "Event day = a Tier 1/2 macro release that day, or the ticker's earnings reaction day.",
+        "",
+        _bps(events, ["mean_all", "mean_ex_event"]).round({"t_all": 2, "t_ex_event": 2}).to_markdown(index=False) if not events.empty else "No signals.",
+        "",
+        "## Mean +60 min return by ticker (bps)",
+        "",
+        ticker_means.to_markdown() if not ticker_means.empty else "No signals.",
+        "",
+        "## Break-even move by ticker (bps, median)",
+        "",
+        ticker_break_even.rename("break_even_bps").to_frame().to_markdown() if not ticker_break_even.empty else "No signals.",
+        "",
+        "## Multiple-testing ledger",
+        "",
+    ]
+    stage1_rows = ledger[ledger["stage"] == "stage1"] if not ledger.empty else ledger
+    count = int(stage1_rows["config_hash"].nunique()) if not stage1_rows.empty else 0
+    lines += [f"- Stage-1 configurations recorded: {count}", f"- Expected false passes under the null (one-sided p at t = 3): {expected_false_passes(count):.3f}", ""]
+    return "\n".join(lines)
+
+
 def write_report(name: str, text: str, directory: Path | None = None) -> Path:
     directory = directory or reports_dir()
     directory.mkdir(parents=True, exist_ok=True)
