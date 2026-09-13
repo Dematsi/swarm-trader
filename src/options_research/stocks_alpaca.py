@@ -20,6 +20,7 @@ from src.options_research.stocks import (
 )
 
 STOCK_BARS_URL = "https://data.alpaca.markets/v2/stocks/bars"
+STOCK_TRADES_URL = "https://data.alpaca.markets/v2/stocks/trades"
 _RTH_START_MINUTE = 9 * 60 + 30   # 09:30 ET
 _RTH_END_MINUTE = 16 * 60         # 16:00 ET (exclusive)
 
@@ -49,6 +50,31 @@ def fetch_alpaca_day(client: AlpacaDataClient, tickers: Iterable[str], day: date
     raw = pd.DataFrame(rows, columns=["symbol", "ts", "open", "high", "low", "close", "volume", "transactions"])
     raw["ts"] = pd.to_datetime(raw["ts"], utc=True)
     return normalize_minutes(raw, source="alpaca")
+
+
+def fetch_minute_trades(client: AlpacaDataClient, symbol: str, minute_start: pd.Timestamp) -> list[dict]:
+    """SIP trades for one symbol with minute_start <= t < minute_start + 1 minute (spec §5.1 confirmation)."""
+    start = pd.Timestamp(minute_start).tz_convert("UTC")
+    end = start + pd.Timedelta(minutes=1)
+    params = {
+        "symbols": symbol,
+        "start": start.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "end": end.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "feed": "sip",
+        "limit": 10000,
+    }
+    trades: list[dict] = []
+    for page in client.paginate(STOCK_TRADES_URL, params):
+        for trade in (page.get("trades") or {}).get(symbol, []):
+            if start <= pd.Timestamp(trade["t"]) < end:
+                trades.append({
+                    "t": trade["t"],
+                    "price": float(trade["p"]),
+                    "size": int(trade["s"]),
+                    "exchange": str(trade.get("x", "")),
+                    "conditions": list(trade.get("c") or []),
+                })
+    return trades
 
 
 def ingest_alpaca_tail(

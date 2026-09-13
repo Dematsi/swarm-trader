@@ -8,8 +8,10 @@ from src.options_research.alpaca_data import AlpacaDataClient, RateLimiter
 from src.options_research.stocks import day_path, is_day_done, write_day
 from src.options_research.stocks_alpaca import (
     STOCK_BARS_URL,
+    STOCK_TRADES_URL,
     compare_sources,
     fetch_alpaca_day,
+    fetch_minute_trades,
     ingest_alpaca_tail,
     validate_zip_overlap,
 )
@@ -103,3 +105,32 @@ def test_validate_zip_overlap_reads_lake_and_compares(tmp_path):
             "rth_close_mismatch": 0, "rth_max_abs_diff_pct": 0.0, "rth_max_close_diff_pct": 0.0,
         }
     }
+
+
+def test_fetch_minute_trades_paginates_and_keeps_only_the_minute():
+    pages = {
+        None: {"trades": {"META": [
+            {"t": "2023-02-01T23:15:05.123456789Z", "p": 182.9, "s": 100, "x": "V", "c": ["@", "T"]},
+        ]}, "next_page_token": "p2"},
+        "p2": {"trades": {"META": [
+            {"t": "2023-02-01T23:15:40Z", "p": 153.12, "s": 100000, "x": "D", "c": ["@", "T"]},
+            {"t": "2023-02-01T23:16:00Z", "p": 183.0, "s": 10, "x": "V", "c": ["@"]},
+        ]}, "next_page_token": None},
+    }
+
+    def handler(request):
+        assert request.method == "GET"
+        assert str(request.url).startswith(STOCK_TRADES_URL)
+        assert request.url.params["symbols"] == "META"
+        assert request.url.params["feed"] == "sip"
+        assert request.url.params["start"] == "2023-02-01T23:15:00Z"
+        assert request.url.params["end"] == "2023-02-01T23:16:00Z"
+        return httpx.Response(200, json=pages[request.url.params.get("page_token")])
+
+    client = AlpacaDataClient(key="k", secret="s", http=httpx.Client(transport=httpx.MockTransport(handler)),
+                              limiter=RateLimiter(1000), sleep=lambda s: None)
+    trades = fetch_minute_trades(client, "META", pd.Timestamp("2023-02-01T23:15:00Z"))
+    assert [(t["price"], t["size"], t["exchange"], t["conditions"]) for t in trades] == [
+        (182.9, 100, "V", ["@", "T"]),
+        (153.12, 100000, "D", ["@", "T"]),
+    ]

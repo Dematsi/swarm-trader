@@ -37,6 +37,7 @@ def test_allowlist_is_exactly_the_spec_endpoints():
         ("data.alpaca.markets", "/v1beta1/options/bars"),
         ("data.alpaca.markets", "/v1beta1/options/trades"),
         ("data.alpaca.markets", "/v2/stocks/bars"),
+        ("data.alpaca.markets", "/v2/stocks/trades"),
         ("api.alpaca.markets", "/v2/options/contracts"),
     })
 
@@ -45,7 +46,7 @@ def test_allowlist_is_exactly_the_spec_endpoints():
     "https://api.alpaca.markets/v2/orders",
     "https://paper-api.alpaca.markets/v2/options/contracts",
     "http://data.alpaca.markets/v1beta1/options/bars",
-    "https://data.alpaca.markets/v2/stocks/trades",
+    "https://data.alpaca.markets/v2/stocks/quotes",
     "https://data.alpaca.markets:9999/v1beta1/options/bars",
     "https://user@data.alpaca.markets/v1beta1/options/bars",
 ])

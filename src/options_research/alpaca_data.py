@@ -1,7 +1,7 @@
 """Read-only Alpaca market-data client (spec §2). The ONLY module in this package allowed to call Alpaca.
 
 Uses the ALPACA_DATA_* key pair, which authenticates on the LIVE host, so the endpoint allowlist is a
-safety boundary: GET only, four data/listing endpoints only, no method that can send an order.
+safety boundary: GET only, a fixed set of data/listing endpoints, no method that can send an order.
 """
 
 from __future__ import annotations
@@ -18,6 +18,7 @@ ALLOWED_ENDPOINTS: frozenset[tuple[str, str]] = frozenset({
     ("data.alpaca.markets", "/v1beta1/options/bars"),
     ("data.alpaca.markets", "/v1beta1/options/trades"),
     ("data.alpaca.markets", "/v2/stocks/bars"),
+    ("data.alpaca.markets", "/v2/stocks/trades"),
     ("api.alpaca.markets", "/v2/options/contracts"),
 })
 RETRY_STATUS = frozenset({429, 500, 502, 503, 504})
