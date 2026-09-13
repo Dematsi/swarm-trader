@@ -35,6 +35,21 @@ uv run python risk_manager.py --status --mode swing            # read-only accou
 `app/run.bat` still call Poetry; to run the backend directly, use
 `uv run uvicorn app.backend.main:app --host 127.0.0.1 --port 8000`.
 
+**Options research** (`src/options_research/`, spec in `docs/superpowers/specs/2026-09-12-options-edge-research-design.md`):
+
+```bash
+uv run python -m src.options_research ingest-stocks   # equity zip -> data/options_lake/stock_1m (resumable)
+uv run python -m src.options_research ingest-tail     # Alpaca SIP minutes after 2026-06-18 + zip-vs-Alpaca check
+uv run python -m src.options_research detect-splits
+uv run python -m src.options_research build-events    # needs FRED_API_KEY for macro release dates
+uv run python -m src.options_research build-costs     # Schwab quotes from the sibling DB (read-only)
+uv run python -m src.options_research report-m1 && uv run python -m src.options_research report-m2
+uv run pytest -m integration tests/options_research   # real-data checks (zip, lake, DB)
+```
+
+Loaders in `store.py` refuse holdout dates (>= 2026-01-02) unless `holdout=True`, which is
+reserved for validation, split detection and cost calibration.
+
 `tests/test_api_rate_limiting.py` fails at collection upstream: it imports `_make_api_request`,
 which no longer exists after the switch to the free data layer. The other 37 tests (all under
 `tests/backtesting/`) pass. There is no CI or lint config beyond black/isort in `pyproject.toml`.
