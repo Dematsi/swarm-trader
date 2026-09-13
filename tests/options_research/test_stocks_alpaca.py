@@ -2,6 +2,7 @@ from datetime import date
 
 import httpx
 import pandas as pd
+import pytest
 
 from src.options_research.alpaca_data import AlpacaDataClient, RateLimiter
 from src.options_research.stocks import day_path, is_day_done, write_day
@@ -66,7 +67,18 @@ def test_compare_sources_counts_mismatches():
                ("SPY", "2025-06-11T13:32:00Z", 1, 2, 0.5, 1.5, 100)], "zip")
     a = frame([("SPY", "2025-06-11T13:30:00Z", 1, 2, 0.5, 1.5, 100), ("SPY", "2025-06-11T13:31:00Z", 1, 2.1, 0.5, 1.5, 90),
                ("SPY", "2025-06-11T13:33:00Z", 1, 2, 0.5, 1.5, 100)], "alpaca")
-    assert compare_sources(z, a) == {"compared": 2, "ohlc_mismatch": 1, "volume_mismatch": 1, "zip_only": 1, "alpaca_only": 1}
+    result = compare_sources(z, a)
+    assert result["max_abs_diff_pct"] == pytest.approx(0.1 / 1.5)
+    del result["max_abs_diff_pct"]
+    assert result == {"compared": 2, "ohlc_mismatch": 1, "volume_mismatch": 1, "zip_only": 1, "alpaca_only": 1, "close_mismatch": 0}
+
+
+def test_compare_sources_close_mismatch_detects_wrong_security():
+    z = frame([("META", "2022-01-11T14:30:00Z", 14.0, 14.1, 13.9, 14.0, 500)], "zip")
+    a = frame([("META", "2022-01-11T14:30:00Z", 330.0, 330.5, 329.5, 330.0, 500)], "alpaca")
+    result = compare_sources(z, a)
+    assert result["close_mismatch"] == 1
+    assert result["max_abs_diff_pct"] > 1.0
 
 
 def test_validate_zip_overlap_reads_lake_and_compares(tmp_path):
@@ -82,6 +94,8 @@ def test_validate_zip_overlap_reads_lake_and_compares(tmp_path):
     assert result == {
         "2025-06-11": {
             "compared": 1, "ohlc_mismatch": 0, "volume_mismatch": 0, "zip_only": 0, "alpaca_only": 0,
+            "close_mismatch": 0, "max_abs_diff_pct": 0.0,
             "rth_compared": 1, "rth_ohlc_mismatch": 0, "rth_volume_mismatch": 0, "rth_zip_only": 0, "rth_alpaca_only": 0,
+            "rth_close_mismatch": 0, "rth_max_abs_diff_pct": 0.0,
         }
     }

@@ -81,14 +81,24 @@ def compare_sources(zip_df: pd.DataFrame, alpaca_df: pd.DataFrame) -> dict:
     merged = zip_df[keys + cols].merge(alpaca_df[keys + cols], on=keys, how="outer", suffixes=("_zip", "_alp"), indicator=True)
     both = merged[merged["_merge"] == "both"]
     ohlc_diff = pd.Series(False, index=both.index)
+    row_max_abs_diff = pd.Series(0.0, index=both.index)
     for col in ("open", "high", "low", "close"):
-        ohlc_diff |= both[f"{col}_zip"].astype(float).round(4) != both[f"{col}_alp"].astype(float).round(4)
+        zip_col = both[f"{col}_zip"].astype(float)
+        alp_col = both[f"{col}_alp"].astype(float)
+        ohlc_diff |= zip_col.round(4) != alp_col.round(4)
+        row_max_abs_diff = pd.concat([row_max_abs_diff, (zip_col - alp_col).abs()], axis=1).max(axis=1)
+    close_zip = both["close_zip"].astype(float)
+    close_alp = both["close_alp"].astype(float)
+    close_mismatch = close_zip.round(4) != close_alp.round(4)
+    max_abs_diff_pct = float((row_max_abs_diff / close_zip).max()) if len(both) else 0.0
     return {
         "compared": int(len(both)),
         "ohlc_mismatch": int(ohlc_diff.sum()),
         "volume_mismatch": int((both["volume_zip"].astype("int64") != both["volume_alp"].astype("int64")).sum()),
         "zip_only": int((merged["_merge"] == "left_only").sum()),
         "alpaca_only": int((merged["_merge"] == "right_only").sum()),
+        "close_mismatch": int(close_mismatch.sum()),
+        "max_abs_diff_pct": max_abs_diff_pct,
     }
 
 
