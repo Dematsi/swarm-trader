@@ -94,6 +94,15 @@ def _cmd_report_m2(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_rebuild_clean(args: argparse.Namespace) -> int:
+    from src.options_research.alpaca_data import AlpacaDataClient
+    from src.options_research.print_checks import rebuild_clean
+
+    client = AlpacaDataClient() if args.phase in ("all", "confirm") else None
+    print(json.dumps(rebuild_clean(client, phase=args.phase, workers=args.workers), default=str))
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     load_dotenv(REPO_ROOT / ".env")
     parser = argparse.ArgumentParser(prog="python -m src.options_research")
@@ -122,6 +131,11 @@ def main(argv: list[str] | None = None) -> int:
 
     sub.add_parser("report-m1").set_defaults(func=_cmd_report_m1)
     sub.add_parser("report-m2").set_defaults(func=_cmd_report_m2)
+
+    p = sub.add_parser("rebuild-clean", help="bad-print candidates -> Alpaca trade confirmation -> rewrite clean columns")
+    p.add_argument("--phase", choices=["all", "scan", "confirm", "rewrite"], default="all")
+    p.add_argument("--workers", type=int, default=4)
+    p.set_defaults(func=_cmd_rebuild_clean)
 
     args = parser.parse_args(argv)
     return args.func(args)
