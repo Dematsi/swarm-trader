@@ -4,12 +4,15 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from src.options_research.setups import gaps_levels, orb
+from src.options_research.setups import gaps_levels, mean_reversion, orb, vwap
 from src.options_research.setups.base import DayContext
 
 SETUPS: dict[str, Callable[[DayContext], list[dict]]] = {
     "ORB15": lambda ctx: orb.detect_orb(ctx, 15),
     "ORB30": lambda ctx: orb.detect_orb(ctx, 30),
+    "VWAP_RECLAIM": vwap.detect_vwap_reclaim,
+    "VWAP_PULLBACK": vwap.detect_vwap_pullback,
+    "MEANREV": mean_reversion.detect_meanrev,
     "GAP_GO": gaps_levels.detect_gap_go,
     "GAP_FILL": gaps_levels.detect_gap_fill,
     "PDL_BREAK": gaps_levels.detect_pdl_break,
@@ -18,6 +21,9 @@ SETUPS: dict[str, Callable[[DayContext], list[dict]]] = {
 SETUP_PARAMS: dict[str, dict] = {
     "ORB15": {**orb.PARAMS, "or_minutes": 15},
     "ORB30": {**orb.PARAMS, "or_minutes": 30},
+    "VWAP_RECLAIM": vwap.RECLAIM_PARAMS,
+    "VWAP_PULLBACK": vwap.PULLBACK_PARAMS,
+    "MEANREV": mean_reversion.PARAMS,
     "GAP_GO": gaps_levels.GAP_GO_PARAMS,
     "GAP_FILL": gaps_levels.GAP_FILL_PARAMS,
     "PDL_BREAK": gaps_levels.PDL_PARAMS,

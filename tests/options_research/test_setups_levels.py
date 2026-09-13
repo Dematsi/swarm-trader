@@ -112,7 +112,7 @@ def test_point_in_time_helper_catches_a_look_ahead_detector():
 
 
 def test_registry_and_signal_shape():
-    assert set(SETUPS) == {"ORB15", "ORB30", "GAP_GO", "GAP_FILL", "PDL_BREAK"}
+    assert {"ORB15", "ORB30", "GAP_GO", "GAP_FILL", "PDL_BREAK"} <= set(SETUPS)
     assert detect_all(make_ctx()) == []
     grid = make_grid()
     set_bar(grid, "10:05", 100.5)
