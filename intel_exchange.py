@@ -203,7 +203,8 @@ def send_intel(packet: dict, target: str = "peer") -> dict:
 
 def main():
     parser = argparse.ArgumentParser(description="Market Intel Exchange")
-    parser.add_argument("--data", default="/tmp/swarm-market-data.json",
+    # Repo-local default: a world-writable /tmp file could be planted by another local user
+    parser.add_argument("--data", default=os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "swarm-market-data.json"),
                        help="Path to gather_data.py output")
     parser.add_argument("--type", default="daily-brief",
                        choices=["daily-brief", "anomaly", "sector-signal", "evening-debrief"],

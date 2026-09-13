@@ -267,7 +267,18 @@ def generate_trading_decision(
         default_factory=create_default_portfolio_output,
     )
 
-    # Merge prefilled holds with LLM results
+    # Merge prefilled holds with LLM results, clamped to the deterministic constraints.
+    # The LLM output is untrusted: ignore tickers it was not asked about, turn disallowed
+    # actions into holds, and cap quantities at the computed max for the chosen action.
     merged = dict(prefilled_decisions)
-    merged.update(llm_out.decisions)
+    for t in tickers_for_llm:
+        decision = llm_out.decisions.get(t)
+        allowed = compact_allowed[t]
+        if decision is None:
+            merged[t] = PortfolioDecision(action="hold", quantity=0, confidence=0, reasoning="Default decision: hold")
+        elif decision.action not in allowed:
+            merged[t] = PortfolioDecision(action="hold", quantity=0, confidence=0, reasoning=f"Rejected disallowed action '{decision.action}'")
+        else:
+            quantity = max(0, min(int(decision.quantity), allowed[decision.action]))
+            merged[t] = decision.model_copy(update={"quantity": quantity})
     return PortfolioManagerOutput(decisions=merged)

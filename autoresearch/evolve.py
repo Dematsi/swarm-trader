@@ -70,6 +70,61 @@ OOS_BACKTEST_DAYS = 20           # wider window for out-of-sample check
 
 
 # ---------------------------------------------------------------------------
+# Subprocess isolation
+# ---------------------------------------------------------------------------
+# load_dotenv() above puts every secret in .env (broker keys, LLM keys, peer
+# tokens) into os.environ. Child processes get an allowlisted environment
+# instead of a copy of it, because the agent and the agent-written strategy.py
+# are untrusted.
+
+# OS/runtime variables needed to start processes, resolve home/config dirs and
+# reach the network (proxies, CA bundles) on Windows and POSIX.
+_BASE_ENV_ALLOWLIST = frozenset({
+    "PATH", "PATHEXT", "SYSTEMROOT", "SYSTEMDRIVE", "WINDIR", "COMSPEC",
+    "HOME", "USERPROFILE", "HOMEDRIVE", "HOMEPATH", "USERNAME", "USER", "LOGNAME",
+    "APPDATA", "LOCALAPPDATA", "PROGRAMDATA", "PROGRAMFILES", "PROGRAMFILES(X86)",
+    "TEMP", "TMP", "TMPDIR", "XDG_CONFIG_HOME", "XDG_CACHE_HOME", "XDG_DATA_HOME",
+    "LANG", "LC_ALL", "LC_CTYPE", "TERM", "TZ", "SHELL",
+    "PYTHONIOENCODING", "PYTHONUTF8",
+    "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "ALL_PROXY",
+    "SSL_CERT_FILE", "SSL_CERT_DIR", "REQUESTS_CA_BUNDLE", "NODE_EXTRA_CA_CERTS",
+})
+
+# What the claude CLI reads to authenticate / locate its config.
+_AGENT_ENV_ALLOWLIST = _BASE_ENV_ALLOWLIST | frozenset({
+    "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL",
+    "CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CONFIG_DIR",
+})
+
+# backtest_fast.py only reads these to download bars from Alpaca's data API.
+_BACKTEST_ENV_ALLOWLIST = _BASE_ENV_ALLOWLIST | frozenset({
+    "ALPACA_API_KEY", "ALPACA_API_SECRET",
+})
+
+# claude CLI tool policy: only Read and Edit exist, edits are auto-approved for
+# strategy.py alone, everything else is denied without prompting. No Bash:
+# evolve.py runs the syntax check and backtest itself.
+AGENT_TOOLS = "Read,Edit"
+AGENT_ALLOWED_TOOLS = "Read,Edit(./autoresearch/strategy.py)"
+AGENT_DISALLOWED_TOOLS = "Read(./.env),Read(./.env.*),Read(./**/.env)"
+
+
+def _filter_env(source: dict[str, str], allowlist: frozenset[str]) -> dict[str, str]:
+    # Windows env var names are case-insensitive (e.g. "Path", "SystemRoot").
+    return {k: v for k, v in source.items() if k.upper() in allowlist}
+
+
+def build_agent_env(source: dict[str, str] | None = None) -> dict[str, str]:
+    """Environment for the claude CLI subprocess (no broker/LLM/peer secrets, no CLAUDECODE)."""
+    return _filter_env(dict(os.environ) if source is None else source, _AGENT_ENV_ALLOWLIST)
+
+
+def build_backtest_env(source: dict[str, str] | None = None) -> dict[str, str]:
+    """Environment for backtest_fast.py (Alpaca data keys only)."""
+    return _filter_env(dict(os.environ) if source is None else source, _BACKTEST_ENV_ALLOWLIST)
+
+
+# ---------------------------------------------------------------------------
 # Experiment log
 # ---------------------------------------------------------------------------
 
@@ -219,12 +274,15 @@ def _run_agent_claude(prompt: str, quiet: bool = False) -> tuple[bool, str]:
         "claude",
         "--print",
         "--model", "claude-sonnet-4-20250514",  # Pin Sonnet — prevents accidental Opus billing
-        "--allowedTools", "Read,Edit,Bash",
+        "--tools", AGENT_TOOLS,
+        "--allowedTools", AGENT_ALLOWED_TOOLS,
+        "--disallowedTools", AGENT_DISALLOWED_TOOLS,
+        "--permission-mode", "dontAsk",
         "-p", prompt,
     ]
 
-    # Strip CLAUDECODE so the child claude process doesn't see a nested session
-    child_env = {k: v for k, v in os.environ.items() if k != "CLAUDECODE"}
+    # Allowlisted env: no secrets from .env, and no CLAUDECODE (nested-session guard)
+    child_env = build_agent_env()
 
     try:
         result = subprocess.run(
@@ -395,6 +453,7 @@ def _run_backtest(backtest_days: int, capital: float, quiet: bool = False, mode:
         result = subprocess.run(
             cmd,
             cwd=str(REPO_ROOT),
+            env=build_backtest_env(),  # strategy.py is agent-written; give it Alpaca data keys only
             capture_output=True,
             text=True,
             timeout=BACKTEST_TIMEOUT_SEC,

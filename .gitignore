@@ -73,3 +73,6 @@ autoresearch/data_cache/
 snapshots/
 data/
 autoresearch/experiments/
+
+# Claude Code agent worktrees
+.claude/worktrees/

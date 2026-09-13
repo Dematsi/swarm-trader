@@ -23,6 +23,17 @@ logs/
 data/
 *.log
 
+# Local databases, runtime state and research caches (may hold keys or trading history)
+*.db
+*.sqlite*
+snapshots/
+autoresearch/data_cache/
+autoresearch/experiments/
+outputs/
+
 # OS specific
 .DS_Store
 Thumbs.db 
+
+# Claude Code local state and agent worktrees
+.claude/

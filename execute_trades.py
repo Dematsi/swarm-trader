@@ -68,7 +68,7 @@ try:
     log.info("V2 risk manager loaded")
 except ImportError:
     RISK_MANAGER_AVAILABLE = False
-    log.warning("risk_manager.py not found — falling back to legacy validation only")
+    log.error("risk_manager.py could not be imported — all buy/short entries will be BLOCKED (fail closed)")
 
 
 def get_account():
@@ -81,6 +81,21 @@ def get_positions():
     r = requests.get(f"{API_BASE}/positions", headers=_headers(), timeout=10)
     r.raise_for_status()
     return {p["symbol"]: p for p in r.json()}
+
+
+def get_latest_price(ticker: str) -> float | None:
+    """Latest trade price from Alpaca's data API, or None if it can't be determined."""
+    try:
+        r = requests.get(
+            f"{DATA_BASE}/stocks/{ticker}/trades/latest",
+            headers=_headers(), params={"feed": "iex"}, timeout=10,
+        )
+        r.raise_for_status()
+        price = float((r.json().get("trade") or {}).get("p") or 0)
+    except Exception as e:
+        log.warning(f"Could not fetch latest price for {ticker}: {e}")
+        return None
+    return price if price > 0 else None
 
 
 def get_daily_pnl(account: dict) -> float:
@@ -265,7 +280,7 @@ def place_order(
     return {"success": False, "error": f"HTTP {r.status_code}: {r.text[:200]}"}
 
 
-def validate_trade_legacy(ticker, action, qty, positions, portfolio_value, daily_loss_limit=0.03, max_trade_pct=0.15):
+def validate_trade_legacy(ticker, action, qty, positions, portfolio_value, daily_loss_limit=0.03, max_trade_pct=0.15, daily_pnl_pct=0.0):
     """Legacy position-level validation (sell/cover checks + portfolio-level circuit breaker)."""
     pos = positions.get(ticker, {})
     current_price = float(pos.get("current_price", 0))
@@ -276,7 +291,6 @@ def validate_trade_legacy(ticker, action, qty, positions, portfolio_value, daily
     if action == "cover" and current_shares >= 0:
         return False, f"No short position in {ticker} to cover"
 
-    daily_pnl_pct = 0.0  # circuit breaker is now handled by V2 risk manager
     if action in ("buy", "short") and daily_pnl_pct <= -daily_loss_limit:
         return False, (
             f"Circuit breaker: down {abs(daily_pnl_pct)*100:.1f}% today "
@@ -353,7 +367,8 @@ def main():
     max_trade_pct = mode_risk["max_position_pct"]
     stop_loss_pct = mode_risk["stop_loss_pct"]
 
-    if daily_pnl_pct <= -daily_loss_limit:
+    circuit_breaker_active = daily_pnl_pct <= -daily_loss_limit
+    if circuit_breaker_active:
         log.warning(
             f"Circuit breaker ACTIVE: down {abs(daily_pnl_pct)*100:.1f}% today "
             f"(limit {daily_loss_limit*100:.0f}%). New buy/short entries blocked."
@@ -387,10 +402,34 @@ def main():
             results.append({"ticker": ticker, "action": action, "status": "skipped", "reason": "Hold or zero qty"})
             continue
 
+        pos = positions.get(ticker, {})
+        ref_price = float(entry_price or limit_price or pos.get("current_price", 0) or 0)
+
+        # ── Entry gates (buy/short): fail closed ─────────────────────────────
+        # Sells/covers reduce risk and stay allowed.
+        if action in ("buy", "short"):
+            block = None
+            if not RISK_MANAGER_AVAILABLE:
+                block = ("risk_manager_unavailable", "V2 risk manager unavailable — new entries blocked (fail closed)")
+            elif circuit_breaker_active:
+                block = ("daily_circuit_breaker", (
+                    f"Circuit breaker: down {abs(daily_pnl_pct)*100:.1f}% today "
+                    f"(limit {daily_loss_limit*100:.0f}%). No new entries until tomorrow."
+                ))
+            elif ref_price <= 0:
+                ref_price = get_latest_price(ticker) or 0.0
+                if ref_price <= 0:
+                    block = ("no_reference_price", f"No reference price for {ticker} (no entry/limit price, not held, latest trade unavailable) — cannot size trade")
+            if block:
+                log.warning(f"BLOCKED {action} {ticker}: {block[1]}")
+                results.append({
+                    "ticker": ticker, "action": action, "qty": qty,
+                    "status": "blocked", "reason": block[1], "rule": block[0],
+                })
+                continue
+
         # ── V2 Risk Manager validation (buy/short entries only) ──────────────
-        if action in ("buy", "short") and RISK_MANAGER_AVAILABLE:
-            pos = positions.get(ticker, {})
-            ref_price = entry_price or limit_price or float(pos.get("current_price", 0))
+        if action in ("buy", "short"):
             rm_result = rm_validate_trade(
                 ticker=ticker,
                 action=action,
@@ -414,8 +453,7 @@ def main():
         # In day mode: brackets are not required — stops managed intraday / via EOD flatten.
         # If the trade JSON explicitly includes stop_price, it will still be used.
         if mode == "swing" and action in ("buy", "cover", "short") and order_type not in ("limit", "stop", "trailing_stop", "oco"):
-            pos = positions.get(ticker, {})
-            ref = entry_price or limit_price or float(pos.get("current_price", 0))
+            ref = ref_price
             if ref > 0:
                 if stop_price is None:
                     if action in ("buy", "cover"):
@@ -440,6 +478,7 @@ def main():
             ticker, action, qty, positions, portfolio_value,
             daily_loss_limit=daily_loss_limit,
             max_trade_pct=max_trade_pct,
+            daily_pnl_pct=daily_pnl_pct,
         )
         if not valid:
             log.warning(f"Legacy validator BLOCKED {action} {ticker}: {reason}")
@@ -486,7 +525,7 @@ def main():
         "trading_mode": mode,
         "mode": "dry_run" if args.dry_run else "live",
         "daily_pnl_pct": round(daily_pnl_pct * 100, 2),
-        "circuit_breaker_active": daily_pnl_pct <= -daily_loss_limit,
+        "circuit_breaker_active": circuit_breaker_active,
         "total_trades": len(trades),
         "executed": executed,
         "blocked": len([r for r in results if r.get("status") == "blocked"]),

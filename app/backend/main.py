@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
 import logging
 import asyncio
 
@@ -16,6 +17,10 @@ app = FastAPI(title="AI Hedge Fund API", description="Backend API for AI Hedge F
 
 # Initialize database tables (this is safe to run multiple times)
 Base.metadata.create_all(bind=engine)
+
+# Reject non-local Host headers. The API has no auth, so this blocks DNS-rebinding
+# attacks from web pages that resolve their own hostname to 127.0.0.1.
+app.add_middleware(TrustedHostMiddleware, allowed_hosts=["127.0.0.1", "localhost"])
 
 # Configure CORS
 app.add_middleware(
