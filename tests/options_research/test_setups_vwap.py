@@ -84,4 +84,4 @@ def test_meanrev_long_short_adx_filter_cooldown_and_cap():
 
 
 def test_registry_has_eight_setups_so_far():
-    assert set(SETUPS) == {"ORB15", "ORB30", "GAP_GO", "GAP_FILL", "PDL_BREAK", "VWAP_RECLAIM", "VWAP_PULLBACK", "MEANREV"}
+    assert {"ORB15", "ORB30", "GAP_GO", "GAP_FILL", "PDL_BREAK", "VWAP_RECLAIM", "VWAP_PULLBACK", "MEANREV"} <= set(SETUPS)

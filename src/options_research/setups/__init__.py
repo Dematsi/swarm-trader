@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from src.options_research.setups import gaps_levels, mean_reversion, orb, vwap
+from src.options_research.setups import gaps_levels, mean_reversion, orb, squeeze, vwap
 from src.options_research.setups.base import DayContext
 
 SETUPS: dict[str, Callable[[DayContext], list[dict]]] = {
@@ -16,6 +16,7 @@ SETUPS: dict[str, Callable[[DayContext], list[dict]]] = {
     "GAP_GO": gaps_levels.detect_gap_go,
     "GAP_FILL": gaps_levels.detect_gap_fill,
     "PDL_BREAK": gaps_levels.detect_pdl_break,
+    "SQUEEZE": squeeze.detect_squeeze,
 }
 
 SETUP_PARAMS: dict[str, dict] = {
@@ -27,6 +28,7 @@ SETUP_PARAMS: dict[str, dict] = {
     "GAP_GO": gaps_levels.GAP_GO_PARAMS,
     "GAP_FILL": gaps_levels.GAP_FILL_PARAMS,
     "PDL_BREAK": gaps_levels.PDL_PARAMS,
+    "SQUEEZE": squeeze.PARAMS,
 }
 
 
