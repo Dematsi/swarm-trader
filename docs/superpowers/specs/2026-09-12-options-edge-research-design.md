@@ -97,6 +97,9 @@ New dependencies: `duckdb`, `pyarrow`, `exchange-calendars`.
 - **Ingest.** For each trading day, read `minute_aggs/YYYY/MM/DATE.csv.gz` from the zip as a
   stream, keep the 12 tickers, and convert `window_start` (epoch ns, UTC) to a tz-aware timestamp
   marking the **bar start**. Keep 04:00–20:00 ET. Write Parquet partitioned by symbol/year.
+- **Ticker renames.** The zip keys rows by the ticker in use that day. Meta Platforms is read from
+  `FB` before 2022-06-09; the zip's pre-rename `META` rows are an unrelated security and are
+  excluded.
 - **Tail.** 2026-06-18 through the freeze date comes from Alpaca `/v2/stocks/bars?timeframe=1Min&feed=sip`.
   On overlapping days, zip and Alpaca must agree exactly (validation check).
 - **Bad prints.** Flag a 1-min bar's high, low or close when it deviates from the median of the
@@ -108,8 +111,8 @@ New dependencies: `duckdb`, `pyarrow`, `exchange-calendars`.
 - **Splits.** Detect candidates where the RTH open / prior RTH close ratio is within 3% of a split
   ratio (2, 3, 4, 5, 10, 15, 20 or reciprocals) and the day's volume ratio confirms. Produce
   `corporate_actions.parquet` with an adjustment factor. Detection must find at least NVDA
-  2021-07-20 (4:1), AMZN 2022-06-06 (20:1), GOOGL 2022-07-18 (20:1), TSLA 2022-08-25 (3:1) and
-  NVDA 2024-06-10 (10:1). Any additional detections are listed for manual confirmation.
+  2021-07-20 (4:1), AMZN 2022-06-06 (20:1), GOOGL 2022-07-18 (20:1), TSLA 2022-08-25 (3:1),
+  NVDA 2024-06-10 (10:1) and NFLX 2025-11-17 (10:1; found in the data and confirmed 2026-09-13). Any additional detections are listed for manual confirmation.
   Multi-day features (prior-day levels, gap %, average volumes, ATR history) use split-adjusted
   series. Same-day prices stay raw, matching the unadjusted option strikes of that day.
 
@@ -176,7 +179,16 @@ and exit decision to validate fill assumptions (§9.4).
 - **Stress runs:** h × 1.5 and h × 2.0 on every stage-2 result.
 
 ### 5.7 Validation checks (in the M1/M4 reports)
-- Zip vs Alpaca SIP stock bars on overlap days: identical OHLCV.
+- Zip vs Alpaca SIP stock bars on overlap days. The asserted bars target gross breakage:
+  - every regular-session close agrees within 0.5% (catches wrong-security rows)
+  - fewer than 5% of regular-session closes differ at all (catches timestamp shifts)
+  - fewer than 5% of all-hours bars differ in any OHLC field
+
+  The two vendors' prints legitimately differ on some bars (trade-condition handling; observed up
+  to 4.8% of RTH bars with any-OHLC differences, up to 1.6% with close differences, and a maximum
+  close gap of 0.04%). Rates and maximum % differences are reported beyond the asserted bars. Volume is reported, not asserted. The
+  stage-1 development period uses the zip only, so vendor mixing happens only inside the holdout
+  tail (after 2026-06-18).
 - Our option 1-min bars rolled up to 5 min vs `research_bars_5m` on a random ≥1% sample of
   overlapping contract-days: identical. This uses the correct window convention (both sides
   start-inclusive, end-exclusive).
