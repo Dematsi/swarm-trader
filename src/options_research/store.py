@@ -53,7 +53,7 @@ def load_stock_minutes(
     con = duckdb.connect()
     try:
         con.execute("SET TimeZone='UTC'")
-        frame = con.read_parquet([p.as_posix() for p in files]).order("symbol, ts").df()
+        frame = con.read_parquet([p.as_posix() for p in files], union_by_name=True).order("symbol, ts").df()
     finally:
         con.close()
     frame["ts"] = pd.to_datetime(frame["ts"], utc=True)

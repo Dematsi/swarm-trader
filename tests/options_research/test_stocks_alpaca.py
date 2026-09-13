@@ -92,7 +92,7 @@ def test_validate_zip_overlap_reads_lake_and_compares(tmp_path):
     lake_rows = pd.DataFrame({
         "symbol": ["SPY"], "ts": pd.to_datetime(["2025-06-11T13:30:00Z"], utc=True),
         "open": [600.0], "high": [600.5], "low": [599.5], "close": [600.2], "volume": [1000], "transactions": [10],
-        "bad_high": [False], "bad_low": [False], "bad_close": [False], "high_clean": [600.5], "low_clean": [599.5], "source": ["zip"],
+        "bad_high": [False], "bad_low": [False], "high_clean": [600.5], "low_clean": [599.5], "source": ["zip"],
     })
     write_day(lake_rows, day, tmp_path)
     pages = {None: {"bars": {"SPY": [bar("2025-06-11T13:30:00Z")]}, "next_page_token": None}}

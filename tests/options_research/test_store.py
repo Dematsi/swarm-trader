@@ -10,7 +10,7 @@ from src.options_research.store import HoldoutAccessError, guard_period, load_st
 def lake_day(root, symbol, iso_ts, close):
     frame = pd.DataFrame({
         "symbol": [symbol], "ts": pd.to_datetime([iso_ts], utc=True), "open": [close], "high": [close], "low": [close],
-        "close": [close], "volume": [100], "transactions": [1], "bad_high": [False], "bad_low": [False], "bad_close": [False],
+        "close": [close], "volume": [100], "transactions": [1], "bad_high": [False], "bad_low": [False],
         "high_clean": [close], "low_clean": [close], "source": ["zip"],
     })
     write_day(frame, pd.Timestamp(iso_ts).tz_convert("America/New_York").date(), root)
@@ -55,3 +55,13 @@ def test_loads_filtered_sorted_utc(tmp_path):
 def test_empty_range_returns_schema(tmp_path):
     df = load_stock_minutes(["SPY"], date(2025, 1, 2), date(2025, 1, 3), root=tmp_path)
     assert list(df.columns) == STOCK_COLUMNS and df.empty
+
+
+def test_loads_mixed_legacy_and_new_schema_files(tmp_path):
+    lake_day(tmp_path, "SPY", "2025-06-11T13:30:00Z", 600.0)
+    legacy = pd.read_parquet(stock_minute_files(["SPY"], date(2025, 6, 11), date(2025, 6, 11), root=tmp_path)[0])
+    lake_day(tmp_path, "SPY", "2025-06-12T13:30:00Z", 601.0)
+    legacy_path = stock_minute_files(["SPY"], date(2025, 6, 12), date(2025, 6, 12), root=tmp_path)[0]
+    legacy.assign(bad_close=False, close=601.0, ts=pd.to_datetime(["2025-06-12T13:30:00Z"], utc=True)).to_parquet(legacy_path, index=False)
+    df = load_stock_minutes(["SPY"], date(2025, 6, 11), date(2025, 6, 12), root=tmp_path)
+    assert list(df.columns) == STOCK_COLUMNS and df["close"].tolist() == [600.0, 601.0]

@@ -13,11 +13,11 @@ from pathlib import Path
 import pandas as pd
 
 from src.options_research.config import TZ_ET, UNIVERSE, lake_root
-from src.options_research.quality import flag_bad_prints
+from src.options_research.quality import apply_clean
 
 MINUTE_COLUMNS = ["ticker", "volume", "open", "close", "high", "low", "window_start", "transactions"]
 RAW_COLUMNS = ["symbol", "ts", "open", "high", "low", "close", "volume", "transactions"]
-STOCK_COLUMNS = RAW_COLUMNS + ["bad_high", "bad_low", "bad_close", "high_clean", "low_clean", "source"]
+STOCK_COLUMNS = RAW_COLUMNS + ["bad_high", "bad_low", "high_clean", "low_clean", "source"]
 _FIRST_MINUTE = 4 * 60    # 04:00 ET
 _END_MINUTE = 20 * 60     # 20:00 ET (exclusive)
 
@@ -46,10 +46,10 @@ def normalize_minutes(raw: pd.DataFrame, source: str) -> pd.DataFrame:
     et = raw["ts"].dt.tz_convert(TZ_ET)
     minute_of_day = et.dt.hour * 60 + et.dt.minute
     kept = raw.loc[(minute_of_day >= _FIRST_MINUTE) & (minute_of_day < _END_MINUTE), RAW_COLUMNS]
-    parts = [flag_bad_prints(group.reset_index(drop=True)) for _, group in kept.sort_values(["symbol", "ts"]).groupby("symbol", sort=True)]
-    if not parts:
+    if kept.empty:
         return pd.DataFrame(columns=STOCK_COLUMNS)
-    out = pd.concat(parts, ignore_index=True)
+    # Pass-through clean columns (flags False, clean = raw); `rebuild-clean` applies trade-confirmed cleaning (spec §5.1).
+    out = apply_clean(kept.sort_values(["symbol", "ts"]).reset_index(drop=True), None)
     out["volume"] = out["volume"].astype("int64")
     out["transactions"] = out["transactions"].fillna(0).astype("int64")
     out["source"] = source
