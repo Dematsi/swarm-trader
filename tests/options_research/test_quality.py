@@ -54,3 +54,21 @@ def test_flags_use_only_past_bars():
     changed[25] = 150.0
     later = flag_bad_prints(bars(changed))
     pd.testing.assert_frame_equal(base.iloc[:25], later.iloc[:25])
+
+
+def test_mad_term_widens_threshold_beyond_pct_floor():
+    pattern = [100.0, 101.0, 99.0, 102.0, 98.0]
+    closes = pattern * 6
+    highs = [c + 0.05 for c in closes]
+    highs[25] = 106.0  # 6 above the ~100 reference: > 3% floor but < 8 x MAD (MAD ~= 1)
+    highs[27] = 110.0  # 10 above the reference: beyond 8 x MAD
+    out = flag_bad_prints(bars(closes, highs=highs))
+    assert not out.loc[25, "bad_high"]
+    assert out.loc[27, "bad_high"]
+
+
+def test_sustained_genuine_move_is_flagged_until_reference_catches_up():
+    closes = [100.0] * 20 + [105.0] * 20
+    out = flag_bad_prints(bars(closes))
+    assert out.loc[20:27, "bad_close"].all()
+    assert not out.loc[28:, "bad_close"].any()
