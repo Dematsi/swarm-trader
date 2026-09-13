@@ -66,7 +66,7 @@ Details are in `docs/DATA_WAREHOUSE.md`. Key facts:
 
 ```
 equity-data.zip (1-min, 2021-06-18 → 2026-06-18) ─┐
-Alpaca SIP 1-min stock bars (2026-06-18 → freeze) ┴─► stocks.py ─► lake/stock_1m/symbol=X/year=YYYY.parquet
+Alpaca SIP 1-min stock bars (2026-06-18 → freeze) ┴─► stocks.py ─► lake/stock_1m/<SYMBOL>/<YYYY>/<YYYY-MM-DD>.parquet
                                                               └─► lake/corporate_actions.parquet (detected splits)
 calendar.py (exchange_calendars XNYS) + events.py (FOMC, FRED release dates, computed expirations, earnings)
                                                               ─► lake/calendar/sessions.parquet, events.parquet
@@ -98,9 +98,11 @@ New dependencies: `duckdb`, `pyarrow`, `exchange-calendars`.
   marking the **bar start**. Keep 04:00–20:00 ET. Write Parquet partitioned by symbol/year.
 - **Tail.** 2026-06-18 through the freeze date comes from Alpaca `/v2/stocks/bars?timeframe=1Min&feed=sip`.
   On overlapping days, zip and Alpaca must agree exactly (validation check).
-- **Bad prints.** Flag a 1-min bar when its high or low deviates from the rolling 15-minute median
-  close by more than max(8 × rolling MAD, 1.5%). Flagged extremes are clipped to that bar's
-  open/close range for level and feature computation. Raw values are kept.
+- **Bad prints.** Flag a 1-min bar's high, low or close when it deviates from the median of the
+  **previous** 15 closes by more than max(8 × MAD, 3%). Flagged extremes are replaced by the bar
+  body clipped into that band, which also handles single-print outlier bars where
+  open = high = low = close. Clean values are used for level and feature computation. Raw values
+  are kept.
   Pre-market bars count toward pre-market high/low only when volume ≥ 100 shares.
 - **Splits.** Detect candidates where the RTH open / prior RTH close ratio is within 3% of a split
   ratio (2, 3, 4, 5, 10, 15, 20 or reciprocals) and the day's volume ratio confirms. Produce
@@ -120,14 +122,20 @@ New dependencies: `duckdb`, `pyarrow`, `exchange-calendars`.
     - PPI, PCE (Personal Income & Outlays), retail sales and GDP (08:30).
     - JOLTS (10:00), ISM manufacturing/services (10:00) and Conference Board consumer confidence
       (10:00).
-    - FOMC minutes (14:00), plus Fed chair testimony and Jackson Hole as a manual list.
+    - FOMC minutes (14:00, three weeks after each decision).
+    - Fed chair testimony and Jackson Hole are **deferred** (no reliable machine-readable source).
+      The realized-volatility regime tag covers those days.
   - **Macro release dates.** BLS/BEA/Census dates use **actual** release dates from the FRED
     release-dates API (needs `FRED_API_KEY`). Shutdown-delayed releases, e.g. fall 2025, are
-    handled that way. ISM and Conference Board dates come from their published schedules as a
-    manual CSV, marked `source=manual`.
+    handled that way. ISM and Conference Board dates come from their publication rules, marked
+    `source=rule`: ISM manufacturing on the 1st session of the month, ISM services on the 3rd,
+    Conference Board on the last Tuesday. FRED release IDs: CPI 10, Employment Situation 50,
+    PPI 46, Personal Income & Outlays 54, GDP 53, Advance Retail Sales 9, JOLTS 192.
+    FOMC decision dates are a committed CSV transcribed from federalreserve.gov (scheduled
+    meetings only).
   - **Market structure** (computed): monthly OPEX (3rd Friday), quarterly quad witching, VIX
     expiration (Wednesday 30 days before the next month's 3rd Friday, exchange-holiday adjusted),
-    month-end, quarter-end, Russell reconstitution (manual dates).
+    month-end, quarter-end, Russell reconstitution (4th Friday of June).
   - **Earnings** for single names: date and BMO/AMC from yfinance, with a spot check of ≥10
     events against issuer IR pages recorded in the M1 report.
 
@@ -295,6 +303,10 @@ inside `[T − 15 min, T + 70 min]`. Reports show results with and without event
 ### 9.1 Periods and holdout protocol
 - **Stage-2 development:** 2024-01-02 → 2025-12-31.
 - **Holdout:** 2026-01-02 → 2026-09-11, for both stages.
+  - Allowed **non-strategy** uses of holdout-period data: data validation (zip vs Alpaca), split
+    detection, and cost-model calibration (Schwab quotes and SPY realized volatility, which only
+    exist from 2026-08-21). None of these compute signals or strategy returns. Each call site
+    passes `holdout=True` with a comment naming the exception.
   - Data loaders **refuse** holdout dates unless called with `holdout=True`. Holdout runs also
     require a ledger entry naming the frozen config hash.
   - One holdout run per finalist configuration. A repeat run is recorded as such and reported.
