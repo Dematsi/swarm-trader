@@ -50,6 +50,10 @@ uv run pytest -m integration tests/options_research   # real-data checks (zip, l
 Loaders in `store.py` refuse holdout dates (>= 2026-01-02) unless `holdout=True`, which is
 reserved for validation, split detection and cost calibration.
 
+**Do not use `high_clean`/`low_clean` for features yet.** The M1 run showed the causal bad-print
+filter clips genuine fast moves and can place clean values outside the traded range; the M3-0
+data-readiness gate (spec §11) must rework cleaning first. Use raw OHLC until then.
+
 `tests/test_api_rate_limiting.py` fails at collection upstream: it imports `_make_api_request`,
 which no longer exists after the switch to the free data layer. The other 37 tests (all under
 `tests/backtesting/`) pass. There is no CI or lint config beyond black/isort in `pyproject.toml`.

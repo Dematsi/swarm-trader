@@ -27,22 +27,29 @@ FRED_RELEASES: dict[int, tuple[str, str, str]] = {
 
 
 def fred_release_events(api_key: str, start: date, end: date, http: httpx.Client | None = None) -> list[dict]:
+    owns_http = http is None
     http = http or httpx.Client(timeout=30)
-    events: list[dict] = []
-    for release_id, (type_, tier, time_et) in FRED_RELEASES.items():
-        response = http.get(FRED_URL, params={
-            "release_id": release_id,
-            "api_key": api_key,
-            "file_type": "json",
-            "include_release_dates_with_no_data": "false",
-            "limit": 10000,
-        })
-        response.raise_for_status()
-        for item in response.json()["release_dates"]:
-            day = date.fromisoformat(item["date"])
-            if start <= day <= end and get_session(day) is not None:
-                events.append(make_event(day, time_et, type_, tier, "fred"))
-    return events
+    try:
+        events: list[dict] = []
+        for release_id, (type_, tier, time_et) in FRED_RELEASES.items():
+            response = http.get(FRED_URL, params={
+                "release_id": release_id,
+                "api_key": api_key,
+                "file_type": "json",
+                "include_release_dates_with_no_data": "false",
+                "limit": 10000,
+            })
+            if not (200 <= response.status_code < 300):
+                # No URL or key in the message: the URL carries api_key as a query param.
+                raise RuntimeError(f"FRED release dates request failed for release {release_id}: HTTP {response.status_code}")
+            for item in response.json()["release_dates"]:
+                day = date.fromisoformat(item["date"])
+                if start <= day <= end and get_session(day) is not None:
+                    events.append(make_event(day, time_et, type_, tier, "fred"))
+        return events
+    finally:
+        if owns_http:
+            http.close()
 
 
 def _yfinance_earnings(ticker: str) -> pd.DataFrame:

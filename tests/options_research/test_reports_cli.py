@@ -35,6 +35,28 @@ def seed_lake(root):
     save_calibration({"rv_cal": 0.12, "sessions": 15, "window": "2026-08-21..2026-09-11"}, root=root)
 
 
+def test_stock_aggregates_counts_session_days_not_utc_dates(tmp_path):
+    from src.options_research.reports import _stock_aggregates
+
+    # Session day 2022-01-11 (ET) has an open-time bar plus a genuine post-market bar
+    # (19:30 ET) that lands on the NEXT UTC calendar day (2022-01-12T00:30:00Z). Both
+    # bars belong to the same file: stock_1m/NVDA/2022/2022-01-11.parquet.
+    frame = pd.DataFrame({
+        "symbol": ["NVDA", "NVDA"],
+        "ts": pd.to_datetime(["2022-01-11T14:30:00Z", "2022-01-12T00:30:00Z"], utc=True),
+        "open": [10.0, 10.0], "high": [10.0, 10.5], "low": [10.0, 9.0], "close": [10.0, 9.5],
+        "volume": [100, 100], "transactions": [1, 1],
+        "bad_high": [False, True], "bad_low": [False, False], "bad_close": [False, False],
+        "high_clean": [10.0, 10.0], "low_clean": [10.0, 9.0], "source": ["zip", "zip"],
+    })
+    write_day(frame, date(2022, 1, 11), tmp_path)
+    agg = _stock_aggregates(tmp_path)
+    row = agg[(agg["symbol"] == "NVDA") & (agg["year"] == 2022)].iloc[0]
+    assert row["days"] == 1
+    assert row["rows"] == 2
+    assert row["bad_high"] == 1
+
+
 def test_m1_report_sections(tmp_path):
     seed_lake(tmp_path)
     text = m1_report(root=tmp_path)
@@ -54,6 +76,7 @@ def test_m1_report_sections(tmp_path):
     assert "UNCONFIRMED" in text
     assert "skipped: FRED_API_KEY not set" in text
     assert "195.95" in text
+    assert "volume differs between vendors" in text
 
 
 def test_m2_report_sections(tmp_path):

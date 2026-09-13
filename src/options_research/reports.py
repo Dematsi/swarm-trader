@@ -17,18 +17,28 @@ def _read_json(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
 
 
+# The lake writes exactly one file per ET trading session:
+# stock_1m/<SYM>/<YYYY>/<YYYY-MM-DD>.parquet. `ts` is UTC, and winter post-market bars
+# (19:00-19:59 ET) land on the NEXT UTC calendar day, so grouping/day-counting off `ts`
+# directly (e.g. `year(ts)`, `CAST(ts AS DATE)`) inflates day counts and can misattribute
+# the year. Extract the session date from the file name instead (exact, no ICU/`AT TIME
+# ZONE` dependency).
+_SESSION_DATE_FROM_FILENAME = r"CAST(regexp_extract(filename, '(\d{4}-\d{2}-\d{2})\.parquet$', 1) AS DATE)"
+
+
 def _stock_aggregates(root: Path) -> pd.DataFrame:
     pattern = (root / "stock_1m" / "*" / "*" / "*.parquet").as_posix()
     if not list((root / "stock_1m").glob("*/*/*.parquet")):
         return pd.DataFrame(columns=["symbol", "year", "days", "rows", "bad_high", "bad_low"])
     con = duckdb.connect()
     try:
-        con.execute("SET TimeZone='UTC'")
+        # Data-validation/report exception to the holdout guard (spec §9.1): aggregates only, no strategy metrics.
         return con.execute(
             f"""
-            SELECT symbol, year(ts) AS year, count(DISTINCT CAST(ts AS DATE)) AS days, count(*) AS rows,
+            SELECT symbol, year({_SESSION_DATE_FROM_FILENAME}) AS year,
+                   count(DISTINCT filename) AS days, count(*) AS rows,
                    sum(CAST(bad_high AS INTEGER)) AS bad_high, sum(CAST(bad_low AS INTEGER)) AS bad_low
-            FROM read_parquet('{pattern}')
+            FROM read_parquet('{pattern}', filename=true)
             GROUP BY 1, 2 ORDER BY 1, 2
             """
         ).df()
@@ -38,17 +48,18 @@ def _stock_aggregates(root: Path) -> pd.DataFrame:
 
 def _largest_bad_print_adjustments(root: Path) -> pd.DataFrame:
     pattern = (root / "stock_1m" / "*" / "*" / "*.parquet").as_posix()
-    columns = ["symbol", "ts", "high", "high_clean", "low", "low_clean", "close", "bad_close", "volume", "transactions", "adjustment"]
+    columns = ["symbol", "session_date", "ts", "high", "high_clean", "low", "low_clean", "close", "bad_close", "volume", "transactions", "adjustment"]
     if not list((root / "stock_1m").glob("*/*/*.parquet")):
         return pd.DataFrame(columns=columns)
     con = duckdb.connect()
     try:
-        con.execute("SET TimeZone='UTC'")
+        # Data-validation/report exception to the holdout guard (spec §9.1): aggregates only, no strategy metrics.
         return con.execute(
             f"""
-            SELECT symbol, ts, high, high_clean, low, low_clean, close, bad_close, volume, transactions,
+            SELECT symbol, {_SESSION_DATE_FROM_FILENAME} AS session_date, ts, high, high_clean, low, low_clean,
+                   close, bad_close, volume, transactions,
                    greatest(high - high_clean, low_clean - low) AS adjustment
-            FROM read_parquet('{pattern}')
+            FROM read_parquet('{pattern}', filename=true)
             WHERE bad_high OR bad_low OR bad_close
             ORDER BY adjustment DESC
             LIMIT 20
@@ -98,6 +109,11 @@ def m1_report(root: Path | None = None) -> str:
     overlap = _read_json(root / "validation" / "zip_vs_alpaca.json")
     lines.append(pd.DataFrame(overlap).T.to_markdown() if overlap else "Not run.")
     lines.append("")
+    lines.append(
+        "- Note: per-bar volume differs between vendors (zip vs Alpaca SIP); bars after 2026-06-18 come from "
+        "Alpaca, so volume-based features that span that date mix vendors (holdout only)."
+    )
+    lines.append("")
 
     lines += ["## Events", ""]
     notes = _read_json(root / "calendar" / "events_notes.json")
@@ -120,6 +136,7 @@ def m1_report(root: Path | None = None) -> str:
 
 def m2_report(root: Path | None = None) -> str:
     root = root or lake_root()
+    # Data-validation/report exception to the holdout guard (spec §9.1): aggregates only, no strategy metrics.
     table = pd.read_parquet(root / "costs" / "half_spread_table.parquet")
     calibration = _read_json(root / "costs" / "calibration.json")
     level = table[["dte_bucket", "moneyness", "premium", "tod_bucket"]].notna().sum(axis=1) + 1

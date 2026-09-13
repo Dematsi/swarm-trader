@@ -18,6 +18,8 @@ class HoldoutAccessError(RuntimeError):
 
 
 def guard_period(start: date, end: date, holdout: bool) -> None:
+    if start > end:
+        raise ValueError(f"reversed date range: start {start} is after end {end}")
     if not holdout and end >= HOLDOUT[0]:
         raise HoldoutAccessError(
             f"{start}..{end} overlaps the holdout starting {HOLDOUT[0]}; pass holdout=True only for "

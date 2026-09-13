@@ -3,6 +3,7 @@ from datetime import date
 
 import httpx
 import pandas as pd
+import pytest
 
 from src.options_research.events_sources import (
     FRED_RELEASES,
@@ -45,6 +46,38 @@ def test_fred_events_filter_range_and_non_sessions():
         (date(2025, 6, 3), "jolts", "10:00", "2", "fred"),
         (date(2025, 6, 11), "cpi", "08:30", "1", "fred"),
     ]
+
+
+def test_fred_error_response_raises_without_leaking_key():
+    def handler(request):
+        return httpx.Response(400, text="bad request")
+
+    http = httpx.Client(transport=httpx.MockTransport(handler))
+    try:
+        with pytest.raises(RuntimeError) as exc_info:
+            fred_release_events("secret-key-123", date(2025, 1, 1), date(2025, 12, 31), http=http)
+    finally:
+        http.close()
+    assert "secret-key-123" not in str(exc_info.value)
+    assert "HTTP 400" in str(exc_info.value)
+
+
+def test_fred_release_events_closes_internally_created_client(monkeypatch):
+    closed = {"v": False}
+    real_client_cls = httpx.Client
+
+    class TrackingClient(real_client_cls):
+        def close(self):
+            closed["v"] = True
+            super().close()
+
+    monkeypatch.setattr(
+        httpx,
+        "Client",
+        lambda timeout=30: TrackingClient(timeout=timeout, transport=httpx.MockTransport(fred_handler({}))),
+    )
+    fred_release_events("k", date(2025, 1, 1), date(2025, 12, 31))
+    assert closed["v"] is True
 
 
 def _earnings_frame(timestamps):

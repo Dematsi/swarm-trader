@@ -29,7 +29,13 @@ class DisallowedEndpointError(ValueError):
 
 def check_allowed(url: str) -> None:
     parts = urlsplit(url)
-    if parts.scheme != "https" or (parts.hostname, parts.path) not in ALLOWED_ENDPOINTS:
+    if (
+        parts.scheme != "https"
+        or (parts.hostname, parts.path) not in ALLOWED_ENDPOINTS
+        or parts.port not in (None, 443)
+        or parts.username is not None
+        or parts.password is not None
+    ):
         raise DisallowedEndpointError(f"endpoint not allowlisted: {url}")
 
 
@@ -82,7 +88,13 @@ class AlpacaDataClient:
         check_allowed(url)
         for attempt in range(self._max_retries + 1):
             self._limiter.acquire()
-            response = self._http.request("GET", url, params=params, headers=self._headers)
+            try:
+                response = self._http.request("GET", url, params=params, headers=self._headers)
+            except httpx.TransportError:
+                if attempt < self._max_retries:
+                    self._sleep(min(60.0, 2.0 ** attempt))
+                    continue
+                raise
             if response.status_code in RETRY_STATUS and attempt < self._max_retries:
                 self._sleep(min(60.0, 2.0 ** attempt))
                 continue

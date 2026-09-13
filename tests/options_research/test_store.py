@@ -28,6 +28,16 @@ def test_loader_refuses_holdout_without_flag(tmp_path):
         load_stock_minutes(["SPY"], date(2026, 1, 2), date(2026, 1, 5), root=tmp_path)
 
 
+def test_guard_rejects_reversed_range_before_holdout_check():
+    with pytest.raises(ValueError):
+        guard_period(date(2025, 6, 2), date(2025, 6, 1), holdout=False)
+
+
+def test_loader_rejects_reversed_range(tmp_path):
+    with pytest.raises(ValueError):
+        load_stock_minutes(["SPY"], date(2025, 6, 2), date(2025, 6, 1), root=tmp_path)
+
+
 def test_loads_filtered_sorted_utc(tmp_path):
     lake_day(tmp_path, "SPY", "2025-06-11T13:31:00Z", 600.0)
     lake_day(tmp_path, "QQQ", "2025-06-11T13:30:00Z", 500.0)
