@@ -29,7 +29,7 @@ class Session:
 
 @lru_cache(maxsize=1)
 def _schedule() -> pd.DataFrame:
-    return xcals.get_calendar("XNYS", start="2021-01-04", end="2026-12-31").schedule
+    return xcals.get_calendar("XNYS", start="2021-01-04", end="2027-12-31").schedule
 
 
 def _to_session(index: pd.Timestamp, row: pd.Series) -> Session:

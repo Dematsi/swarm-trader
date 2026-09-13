@@ -71,3 +71,8 @@ def test_fomc_decision_press_and_minutes_june_2025():
 def test_fomc_decision_count_over_study_window():
     events = fomc_events(date(2021, 6, 18), date(2026, 9, 11))
     assert len(_find(events, "fomc_decision")) == 41
+
+
+def test_rule_events_december_2026_vix_lookahead_stays_in_calendar():
+    events = rule_events(date(2026, 12, 1), date(2026, 12, 31))
+    assert [e["date"] for e in _find(events, "vix_expiration")] == [date(2026, 12, 16)]
