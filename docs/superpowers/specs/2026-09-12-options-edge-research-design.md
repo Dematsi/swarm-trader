@@ -141,8 +141,10 @@ New dependencies: `duckdb`, `pyarrow`, `exchange-calendars`.
     values read once the window is over: prior-day high/low/close, ATR history, and pre-market
     high/low read at or after 09:30. Intraday regular-hours features use raw prices, as a live
     system would see them.
-  - Cleaning runs as a separate `rebuild-clean` step over stored day files (no zip re-read). Ingest
-    uses the same function for new data.
+  - Cleaning runs as a separate `rebuild-clean` step with phases scan → confirm → rewrite, over the
+    stored day files (no zip re-read). The confirm phase needs the network and is resumable. Ingest
+    writes pass-through clean columns (flags False, clean = raw), so run `rebuild-clean` after any
+    new ingest.
   - Validation (2026-09-13): at the 3% band the candidate rule flags 1,026 of 11.65M bars. It flags
     none of the genuine earnings or tariff moves tested (AMZN 2022-10-27 and 2022-02-03, META
     2022-02-02, NFLX 2022-10-18, META 2025-04-09), and no candidates fall inside Yahoo's 30-day
