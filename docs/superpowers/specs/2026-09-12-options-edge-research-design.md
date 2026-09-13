@@ -135,22 +135,39 @@ New dependencies: `duckdb`, `pyarrow`, `exchange-calendars`.
      - Clean values always lie within the raw bar and are never invented. If no in-band trade
        exists on that side, the value is left empty and the bar is excluded from level
        calculations.
+     - A confirmed in-band value outside the raw bar counts as no in-band trade. This happens
+       when the bar consists only of the outlier print. If the whole bar lies beyond the band,
+       both sides are left empty.
   4. **Audit.** Every candidate's evidence is written to `lake/quality/print_checks.parquet`: trade
      counts, outlier prices, exchanges, condition codes, and the decision.
   - Columns: `bad_high`, `bad_low` (isolated print on that side), `high_clean`, `low_clean`. Close
     stays raw; flagged closes were overwhelmingly genuine moves.
   - **Hindsight rule:** clean columns use bars after the one being cleaned, so they may only feed
-    values read once the window is over: prior-day high/low/close, ATR history, and pre-market
-    high/low read at or after 09:30. Intraday regular-hours features use raw prices, as a live
-    system would see them.
+    values read once the window is over: prior-day high/low, ATR history, and pre-market
+    high/low read at or after 09:37. The last pre-market bar's centered window reaches the 09:36
+    bar.
+    - Prior-day close is the raw regular-hours close. No regular-hours close was an isolated
+      print.
+    - Intraday regular-hours features use raw prices.
+    - `store.load_stock_minutes` returns the flag and clean columns only with `clean=True`.
+    - A recursive source-scan test limits which modules may reference those columns or import
+      `quality`/`print_checks`. `find_print_candidates` looks at future bars.
+    - Raw data keeps 17 confirmed isolated prints inside regular hours, mostly condition `Z`/`4`
+      (e.g. 2024-08-05). Live SIP bars exclude some of these, so raw intraday prices only
+      approximately match what a live system sees.
   - Cleaning runs as a separate `rebuild-clean` step with phases scan → confirm → rewrite, over the
     stored day files (no zip re-read). The confirm phase needs the network and is resumable. Ingest
     writes pass-through clean columns (flags False, clean = raw), so run `rebuild-clean` after any
     new ingest.
+    - `rebuild-clean` is a data-maintenance exception to the holdout guard (§9.1).
+    - Decisions are keyed by (symbol, ts, side). Re-ingesting an existing day with different bars
+      reuses the old decision, so delete that day's audit rows first.
   - Validation (2026-09-13): at the 3% band the candidate rule flags 1,026 of 11.65M bars. It flags
     none of the genuine earnings or tariff moves tested (AMZN 2022-10-27 and 2022-02-03, META
     2022-02-02, NFLX 2022-10-18, META 2025-04-09), and no candidates fall inside Yahoo's 30-day
     1-minute window.
+    - Confirmation (2026-09-13): 1,045 candidate sides on those bars. 428 were isolated, 617
+      genuine, and 0 had no trades.
   Pre-market bars count toward pre-market high/low only when volume ≥ 100 shares.
 - **Splits.** Detect candidates where the RTH open / prior RTH close ratio is within 3% of a split
   ratio (2, 3, 4, 5, 10, 15, 20 or reciprocals) and the day's volume ratio confirms. Produce
@@ -365,7 +382,8 @@ inside `[T − 15 min, T + 70 min]`. Reports show results with and without event
 - **Holdout:** 2026-01-02 → 2026-09-11, for both stages.
   - Allowed **non-strategy** uses of holdout-period data: data validation (zip vs Alpaca), split
     detection, and cost-model calibration (Schwab quotes and SPY realized volatility, which only
-    exist from 2026-08-21). None of these compute signals or strategy returns. Each call site
+    exist from 2026-08-21), and data maintenance (`rebuild-clean` bad-print checks). None of
+    these compute signals or strategy returns. Each call site
     passes `holdout=True` with a comment naming the exception.
   - Data loaders **refuse** holdout dates unless called with `holdout=True`. Holdout runs also
     require a ledger entry naming the frozen config hash.
@@ -441,11 +459,18 @@ It also reports:
     - isolated-print classification from mocked trades: off-exchange single prints vs broad
       on-exchange participation
     - clean values always inside the raw bar, or empty
+    - a single-price bar made of the outlier print leaves both clean values empty
+  - **Hindsight columns:**
+    - `load_stock_minutes` omits flag/clean columns unless `clean=True`.
+    - A package-wide (recursive) source scan limits four things to approved modules: Parquet
+      reads, the stock lake path, clean-column references, and `quality`/`print_checks` imports.
   - Cost model: hierarchical backoff, regime scaling, event multiplier.
   - Holdout guard: loaders refuse holdout dates without the flag.
 - **Integration checks** read the real zip/Alpaca/DB and are marked and skipped when unavailable:
   the known split detections, zip vs SIP identity, and 1-min → 5-min vs `research_bars_5m`
-  identity.
+  identity. They also cover:
+  - known isolated and genuine print probes
+  - lake flags equal to isolated audit rows, with clean values within the band or empty
 
 ## 11. Milestones (each ends with a report in `reports/options_research/`)
 
@@ -453,7 +478,7 @@ It also reports:
 |---|---|---|
 | M1 | Package skeleton, safe Alpaca client, calendar/events, stock ingest (zip + tail), splits, bad prints, validation report | — |
 | M2 | Cost model from Schwab quotes + stress, report | — |
-| M3-0 | **Data-readiness gate (blocks M3).** To do: rework bad-print cleaning per §5.1 (candidates → Alpaca trade-level confirmation → clean values from real in-band trades → audit file, run by a `rebuild-clean` step with no zip re-ingest); add a split volume-adjustment helper (reciprocal factor); enforce by test that feature data is read only through `store.load_stock_minutes`; restore UTC timestamps in reports; regenerate the M1 report. Done 2026-09-13: `FRED_API_KEY` added, events rebuilt, FRED dates spot-checked (~1 revision-only extra date per series per year kept as a conservative tag); earnings IR spot-check completed by the user | **User confirms the gate** |
+| M3-0 | **Data-readiness gate (blocks M3).** Done 2026-09-13:<br>• trade-confirmed cleaning per §5.1 via `rebuild-clean`: 1,045 candidate sides on 1,026 bars, 428 isolated and 617 genuine; audit in `quality/print_checks.parquet`<br>• `volume_adjustment_factors` (reciprocal)<br>• loader-only and hindsight source-scan tests, with opt-in clean columns<br>• UTC report timestamps<br>• M1 report regenerated<br>• `FRED_API_KEY` added, events rebuilt, FRED dates spot-checked (~1 revision-only extra date per series per year kept as a conservative tag); earnings IR spot-check completed by the user | **User confirms the gate** |
 | M3 | Features + 9 setups + stage-1 evaluation (dev period), report | **User reviews which setups pass** |
 | M4 | Ladders + on-demand 1-min option bars for passing setups, validation vs bot data, coverage report | — |
 | M5 | Stage-2 engine, dev-period grid, edge-decay, event modes, stress, report | **User reviews finalists** |

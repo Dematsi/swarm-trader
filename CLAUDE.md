@@ -52,11 +52,17 @@ reserved for validation, split detection and cost calibration.
 
 **Clean columns are hindsight values.** `rebuild-clean` flags only isolated off-market prints (≤3
 off-exchange trades beyond a two-sided band, confirmed from Alpaca SIP trades) and sets
-`high_clean`/`low_clean` to the most extreme in-band traded price. Use clean columns only for values
-read after the window closes (prior-day high/low/close, ATR history, pre-market high/low at or after
-09:30). Intraday regular-hours features use raw OHLC. Run
-`uv run python -m src.options_research rebuild-clean` (phases `scan`, `confirm`, `rewrite`) after
-any new ingest; the audit trail is in `data/options_lake/quality/print_checks.parquet`.
+`high_clean`/`low_clean` to the most extreme in-band traded price. The value is empty when no
+in-band trade lies inside the raw bar.
+- `store.load_stock_minutes` returns flag and clean columns only with `clean=True`.
+- Use them only for values read after the window closes: prior-day high/low, ATR history, and
+  pre-market high/low at or after 09:37.
+- Prior-day close and all intraday regular-hours features use raw OHLC.
+- `tests/options_research/test_data_access.py` restricts which modules may read the lake,
+  reference clean columns, or import `quality`/`print_checks`. The candidate detector looks at
+  future bars.
+- Run `uv run python -m src.options_research rebuild-clean` (phases `scan`, `confirm`, `rewrite`)
+  after any new ingest. The audit trail is in `data/options_lake/quality/print_checks.parquet`.
 
 `tests/test_api_rate_limiting.py` fails at collection upstream: it imports `_make_api_request`,
 which no longer exists after the switch to the free data layer. The other 37 tests (all under
