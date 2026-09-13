@@ -70,7 +70,10 @@ def test_compare_sources_counts_mismatches():
     result = compare_sources(z, a)
     assert result["max_abs_diff_pct"] == pytest.approx(0.1 / 1.5)
     del result["max_abs_diff_pct"]
-    assert result == {"compared": 2, "ohlc_mismatch": 1, "volume_mismatch": 1, "zip_only": 1, "alpaca_only": 1, "close_mismatch": 0}
+    assert result == {
+        "compared": 2, "ohlc_mismatch": 1, "volume_mismatch": 1, "zip_only": 1, "alpaca_only": 1,
+        "close_mismatch": 0, "max_close_diff_pct": 0.0,
+    }
 
 
 def test_compare_sources_close_mismatch_detects_wrong_security():
@@ -79,6 +82,7 @@ def test_compare_sources_close_mismatch_detects_wrong_security():
     result = compare_sources(z, a)
     assert result["close_mismatch"] == 1
     assert result["max_abs_diff_pct"] > 1.0
+    assert result["max_close_diff_pct"] > 1.0
 
 
 def test_validate_zip_overlap_reads_lake_and_compares(tmp_path):
@@ -94,8 +98,8 @@ def test_validate_zip_overlap_reads_lake_and_compares(tmp_path):
     assert result == {
         "2025-06-11": {
             "compared": 1, "ohlc_mismatch": 0, "volume_mismatch": 0, "zip_only": 0, "alpaca_only": 0,
-            "close_mismatch": 0, "max_abs_diff_pct": 0.0,
+            "close_mismatch": 0, "max_abs_diff_pct": 0.0, "max_close_diff_pct": 0.0,
             "rth_compared": 1, "rth_ohlc_mismatch": 0, "rth_volume_mismatch": 0, "rth_zip_only": 0, "rth_alpaca_only": 0,
-            "rth_close_mismatch": 0, "rth_max_abs_diff_pct": 0.0,
+            "rth_close_mismatch": 0, "rth_max_abs_diff_pct": 0.0, "rth_max_close_diff_pct": 0.0,
         }
     }

@@ -91,6 +91,7 @@ def compare_sources(zip_df: pd.DataFrame, alpaca_df: pd.DataFrame) -> dict:
     close_alp = both["close_alp"].astype(float)
     close_mismatch = close_zip.round(4) != close_alp.round(4)
     max_abs_diff_pct = float((row_max_abs_diff / close_zip).max()) if len(both) else 0.0
+    max_close_diff_pct = float(((close_zip - close_alp).abs() / close_zip).max()) if len(both) else 0.0
     return {
         "compared": int(len(both)),
         "ohlc_mismatch": int(ohlc_diff.sum()),
@@ -99,6 +100,7 @@ def compare_sources(zip_df: pd.DataFrame, alpaca_df: pd.DataFrame) -> dict:
         "alpaca_only": int((merged["_merge"] == "right_only").sum()),
         "close_mismatch": int(close_mismatch.sum()),
         "max_abs_diff_pct": max_abs_diff_pct,
+        "max_close_diff_pct": max_close_diff_pct,
     }
 
 
