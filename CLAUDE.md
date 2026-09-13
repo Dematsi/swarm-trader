@@ -44,6 +44,8 @@ uv run python -m src.options_research detect-splits
 uv run python -m src.options_research build-events    # needs FRED_API_KEY for macro release dates
 uv run python -m src.options_research build-costs     # Schwab quotes from the sibling DB (read-only)
 uv run python -m src.options_research report-m1 && uv run python -m src.options_research report-m2
+uv run python -m src.options_research stage1 --workers 4   # stage-1 signals + outcomes (resumable per symbol; --symbols, --overwrite)
+uv run python -m src.options_research report-m3            # evaluation vs spec §8.3, ledger entries, reports/options_research/m3_stage1.md
 uv run pytest -m integration tests/options_research   # real-data checks (zip, lake, DB)
 ```
 
@@ -63,6 +65,18 @@ in-band trade lies inside the raw bar.
   future bars.
 - Run `uv run python -m src.options_research rebuild-clean` (phases `scan`, `confirm`, `rewrite`)
   after any new ingest. The audit trail is in `data/options_lake/quality/print_checks.parquet`.
+
+**Stage-1 layout.**
+- `features.py` builds raw point-in-time features: a 1-min grid, VWAP/σ, and 5-min Wilder
+  indicators attached only when the 5-min bar is complete.
+- `levels.py` is the only feature module that reads clean columns. It holds prior-day and
+  pre-market levels plus the 5-session warm-up, all split-adjusted.
+- `setups/` holds one detector per pre-registered setup. It takes a `DayContext` and returns
+  signals decided at `T = bar start + 1 min`.
+- `stage1.py` runs the detectors and adds forward outcomes and tags. `evaluate.py` applies spec §8.3.
+- `ledger.py` records every evaluated configuration in `reports/options_research/ledger.jsonl`.
+- Pre-registered interpretations are in `docs/superpowers/plans/2026-09-13-options-research-m3-stage1.md`.
+  Changing a setup parameter or evaluation rule creates new ledger configurations.
 
 `tests/test_api_rate_limiting.py` fails at collection upstream: it imports `_make_api_request`,
 which no longer exists after the switch to the free data layer. The other 37 tests (all under
