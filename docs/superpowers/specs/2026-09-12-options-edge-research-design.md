@@ -20,7 +20,8 @@ costs, with **entry and exit timing modeled as carefully as possible**.
 **Out of scope (later phases)**
 - Debit vertical spreads (phase 2; needs Level 3 and confirmed multi-leg support).
 - Setups built specifically around events (e.g. trading the range after the FOMC release).
-- Paper or live order execution, position sizing, and portfolio construction.
+- Paper or live order execution. Position sizing and portfolio constraints are **not** part of
+  edge validation. They are evaluated separately in **M5b**, after finalists are chosen (§11).
 - LLM agents. This work is deterministic and doesn't touch `src/agents` or the root trading
   scripts.
 
@@ -383,6 +384,7 @@ It also reports:
 | M3 | Features + 9 setups + stage-1 evaluation (dev period), report | **User reviews which setups pass** |
 | M4 | Ladders + on-demand 1-min option bars for passing setups, validation vs bot data, coverage report | — |
 | M5 | Stage-2 engine, dev-period grid, edge-decay, event modes, stress, report | **User reviews finalists** |
+| M5b | **Portfolio simulation of finalists.** Inputs: account size, risk per trade sized on premium at risk (stop + slippage buffer, capped at full premium), max concurrent positions, max trades/day, daily loss stop, correlated-exposure cap (SPY/QQQ/IWM/megacaps same direction). Outputs: equity curve, max drawdown, worst day, probability of breaching a drawdown limit, whole-contract feasibility. Reported at $25k/$50k/$100k and 0.5%/1%/2% until the user picks values. Dev period only. | **User picks sizing parameters** |
 | M6 | Tick-trade fill validation for finalists + single holdout run, final report | **User decision on phase 2 (verticals)** |
 
 ## 12. Assumptions to confirm or calibrate
@@ -397,3 +399,5 @@ It also reports:
 | FRED API key | Required for macro release dates | User provides `FRED_API_KEY` before M1 events work |
 | Stop-order semantics at Alpaca | Unknown trigger basis | Paper test before any live phase |
 | Level 3 / multi-leg support | Unconfirmed | Before phase 2 |
+| Account size | Undecided; M5b reports $25k / $50k / $100k | User decision at M5b |
+| Risk per trade | Undecided; M5b reports 0.5% / 1% / 2% of account (premium at risk) | User decision at M5b |
