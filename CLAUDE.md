@@ -37,6 +37,8 @@ uv run python risk_manager.py --status --mode swing            # read-only accou
 
 **Options research** (`src/options_research/`, spec in `docs/superpowers/specs/2026-09-12-options-edge-research-design.md`):
 
+Results, decisions and process lessons are recorded in `docs/research/options-edge-research-log.md` (newest first; PRELIMINARY/FINAL status). Add an entry after every milestone, run or review.
+
 ```bash
 uv run python -m src.options_research ingest-stocks   # equity zip -> data/options_lake/stock_1m (resumable)
 uv run python -m src.options_research ingest-tail     # Alpaca SIP minutes after 2026-06-18 + zip-vs-Alpaca check
