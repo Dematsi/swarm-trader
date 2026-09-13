@@ -33,8 +33,10 @@ costs, with **entry and exit timing modeled as carefully as possible**.
   construction:
   - HTTP GET only. It has no function that can send a body or use another method.
   - Host+path allowlist:
-    - `data.alpaca.markets`: `/v1beta1/options/bars`, `/v1beta1/options/trades`, `/v2/stocks/bars`
+    - `data.alpaca.markets`: `/v1beta1/options/bars`, `/v1beta1/options/trades`, `/v2/stocks/bars`,
+      `/v2/stocks/trades` (added for M3-0 bad-print confirmation)
     - `api.alpaca.markets`: `/v2/options/contracts`
+    - URLs with a non-default port or embedded credentials are rejected.
   - Uses only `ALPACA_DATA_API_KEY` / `ALPACA_DATA_SECRET_KEY`. These are **live-host keys**, so
     the allowlist is a safety boundary and is covered by tests.
   - Client-side rate limit of 180 requests/min (Alpaca's is 200). Retries with backoff on 429/5xx.
@@ -58,7 +60,7 @@ Details are in `docs/DATA_WAREHOUSE.md`. Key facts:
 | Liquid ATM contracts print every minute (SPY 0DTE, NVDA/AAPL weekly: 98–100% of minutes). Thinner ones don't (SPY next-weekly ATM 66%, META weekly 47%, gaps up to 12 min). NVDA weekly ATM: first print after a decision point at median 0.9 s, p90 4.2 s. | 1-min bars are enough for timing on liquid contracts. Liquidity filters are required. |
 | Where a trade print sits within the Schwab bid/ask is bimodal: ~45% near the bid, ~45% near the ask, median exactly mid. 20–64% of 5-min bar closes lie outside the quote at the bar's end, i.e. stale. | Treat a print as a noisy estimate of mid and add half the spread. Fill only on prints **after** the decision. |
 | Median ATM bid/ask spread (1–7 DTE): SPY/QQQ/IWM/NVDA/TSLA under ~2%; AAPL/AMZN/META/NFLX/AMD 2–6%; MSFT/GOOGL 6–8%. 0DTE OTM: 20–60%. | Model costs per ticker × DTE × moneyness × premium. Add a spread filter at entry. |
-| The equity zip has all-US 1-min bars from **2021-06-18 to 2026-06-18**. Rolled up to 5 min it matches Alpaca SIP exactly. It is **not split-adjusted** (NVDA 1208.88 → 121.79 on 2024-06-10) and contains **bad prints** (NVDA 2024-06-10 high 195.95, true high ~123). | Detect and adjust splits. Filter outliers. Build levels from filtered regular-session minutes. |
+| The equity zip has all-US 1-min bars from **2021-06-18 to 2026-06-18**. Rolled up to 5 min it matches Alpaca SIP exactly. It is **not split-adjusted** (NVDA 1208.88 → 121.79 on 2024-06-10). Its minute bars include **isolated off-market prints**, real reported trades at prices the public market wasn't trading: e.g. META 2023-02-01 18:15 ET low $153.12 (that day's close, reported after hours) and QQQ 2022-05-09 14:58 high $309.35 (a derivatively priced trade). The NVDA 2024-06-10 $195.95 high exists only in the daily aggregate files, which the pipeline doesn't use. | Detect and adjust splits. Confirm outliers with trade-level evidence and clean only isolated prints (§5.1). Build after-the-window levels from clean values; intraday features use raw prices. |
 | The sibling bot's `research_bars_5m` has ~23% of the option contract-days this test needs and only 5-min resolution. Where it has a contract-day, the bars are complete and identical to Alpaca. | Use it for validation, not as a bar source. |
 | Alpaca options: single-leg market/limit/stop/stop_limit (the docs pages conflict), no extended hours. From **15:30 ET on expiration day**, Alpaca evaluates expiring positions and blocks new opening orders on them. | 0DTE entry and exit cutoffs (§7.5). Verify stop semantics on paper before any live use. |
 | The PDT rule was eliminated 2026-06-04 (per user). | Not a constraint. |
@@ -102,19 +104,49 @@ New dependencies: `duckdb`, `pyarrow`, `exchange-calendars`.
   excluded.
 - **Tail.** 2026-06-18 through the freeze date comes from Alpaca `/v2/stocks/bars?timeframe=1Min&feed=sip`.
   On overlapping days, the zip and Alpaca are checked against the tolerance bars in §5.7.
-- **Bad prints.** Flag a 1-min bar's high, low or close when it deviates from the median of the
-  **previous** 15 closes by more than max(8 × MAD, 3%). Flagged extremes are replaced by the bar
-  body clipped into that band, which also handles single-print outlier bars where
-  open = high = low = close. Raw values are kept.
-  **Provisional:** the M1 run showed this causal filter clips genuine fast moves, and it can place
-  clean highs/lows outside the traded range (e.g. META 2025-04-09 13:26 ET, AMZN earnings
-  after-hours). Clean values must not feed features until the M3-0 data-readiness gate (§11)
-  reworks cleaning:
-  - the clean range is confined to the raw bar
-  - a print-quality guard (low transactions/volume) is required before flagging
-  - a two-sided (non-causal) filter is used for levels consumed after the session ends (prior-day
-    high/low/close, ATR history), with the causal filter kept only for intraday features
-  - an explicit `close_clean` decision is made
+- **Bad prints.** Raw OHLC is always kept. Cleaning is two-sided and evidence-based (M3-0 rework,
+  approved 2026-09-13; it replaces the M1 causal filter, which clipped genuine fast moves and could
+  place clean values outside the traded range).
+  1. **Candidates.** Work per session day over the 04:00–20:00 bars.
+     - Reference: median close of the 15-bar window centered on the bar, computed only when the
+       window holds ≥ 6 bars.
+     - Band: max(8 × MAD of those closes, 3% of the reference).
+     - A bar is a candidate when its high or low lies outside the band **and** the median of the
+       next 5 closes is back inside it (price snaps back).
+  2. **Trade-level confirmation.** Uses Alpaca SIP `/v2/stocks/trades` for each candidate minute.
+     A side is an **isolated print** when at most 3 trades lie beyond the band **and all of them
+     were reported off-exchange (exchange code `D`, FINRA TRF)**. Examples verified against Alpaca
+     trades and Yahoo daily bars:
+     - a trade priced at the day's close and reported after hours (META 2023-02-01 $153.12 and
+       GOOGL 2024-04-25 $156.00, each exactly that day's close)
+     - off-market blocks (IWM 2023-03-17 $195/$190)
+     - derivatively priced trades, which official consolidated minute bars exclude (QQQ
+       2022-05-09 $309.35)
+
+     Moves with on-exchange participation keep raw values (META 2022-04-27 $169.00, thousands of
+     lit trades; also Yahoo's daily low). Yahoo is not a clean reference: its daily highs keep
+     some derivatively priced prints.
+  3. **Clean values.**
+     - Isolated print: `high_clean`/`low_clean` is the most extreme price actually traded inside
+       the band during that minute.
+     - Otherwise: raw.
+     - Clean values always lie within the raw bar and are never invented. If no in-band trade
+       exists on that side, the value is left empty and the bar is excluded from level
+       calculations.
+  4. **Audit.** Every candidate's evidence is written to `lake/quality/print_checks.parquet`: trade
+     counts, outlier prices, exchanges, condition codes, and the decision.
+  - Columns: `bad_high`, `bad_low` (isolated print on that side), `high_clean`, `low_clean`. Close
+    stays raw; flagged closes were overwhelmingly genuine moves.
+  - **Hindsight rule:** clean columns use bars after the one being cleaned, so they may only feed
+    values read once the window is over: prior-day high/low/close, ATR history, and pre-market
+    high/low read at or after 09:30. Intraday regular-hours features use raw prices, as a live
+    system would see them.
+  - Cleaning runs as a separate `rebuild-clean` step over stored day files (no zip re-read). Ingest
+    uses the same function for new data.
+  - Validation (2026-09-13): at the 3% band the candidate rule flags 1,026 of 11.65M bars. It flags
+    none of the genuine earnings or tariff moves tested (AMZN 2022-10-27 and 2022-02-03, META
+    2022-02-02, NFLX 2022-10-18, META 2025-04-09), and no candidates fall inside Yahoo's 30-day
+    1-minute window.
   Pre-market bars count toward pre-market high/low only when volume ≥ 100 shares.
 - **Splits.** Detect candidates where the RTH open / prior RTH close ratio is within 3% of a split
   ratio (2, 3, 4, 5, 10, 15, 20 or reciprocals) and the day's volume ratio confirms. Produce
@@ -391,7 +423,12 @@ It also reports:
   - Fill logic: stop and target in the same bar, gap through stop, missing bars, forced stale exit,
     latency, entry timeout.
   - Cutoffs: 0DTE vs other expiries, half-days, DST transitions.
-  - Split detection on synthetic series, and bad-print clipping.
+  - Split detection on synthetic series.
+  - Bad-print cleaning:
+    - candidate detection: a snap-back wick is a candidate; a lasting move is not
+    - isolated-print classification from mocked trades: off-exchange single prints vs broad
+      on-exchange participation
+    - clean values always inside the raw bar, or empty
   - Cost model: hierarchical backoff, regime scaling, event multiplier.
   - Holdout guard: loaders refuse holdout dates without the flag.
 - **Integration checks** read the real zip/Alpaca/DB and are marked and skipped when unavailable:
@@ -404,7 +441,7 @@ It also reports:
 |---|---|---|
 | M1 | Package skeleton, safe Alpaca client, calendar/events, stock ingest (zip + tail), splits, bad prints, validation report | — |
 | M2 | Cost model from Schwab quotes + stress, report | — |
-| M3-0 | **Data-readiness gate (blocks M3).** Rework bad-print cleaning (§5.1 provisional note) and re-ingest; add `FRED_API_KEY`, rebuild events, spot-check FRED release dates per series; complete the earnings IR spot-check (≥10 events; **done by the user 2026-09-13**, all 10 sampled dates verified); add a split volume-adjustment helper (reciprocal factor); route all feature data through `store.load_stock_minutes`; regenerate the M1 report | **User confirms the gate** |
+| M3-0 | **Data-readiness gate (blocks M3).** To do: rework bad-print cleaning per §5.1 (candidates → Alpaca trade-level confirmation → clean values from real in-band trades → audit file, run by a `rebuild-clean` step with no zip re-ingest); add a split volume-adjustment helper (reciprocal factor); enforce by test that feature data is read only through `store.load_stock_minutes`; restore UTC timestamps in reports; regenerate the M1 report. Done 2026-09-13: `FRED_API_KEY` added, events rebuilt, FRED dates spot-checked (~1 revision-only extra date per series per year kept as a conservative tag); earnings IR spot-check completed by the user | **User confirms the gate** |
 | M3 | Features + 9 setups + stage-1 evaluation (dev period), report | **User reviews which setups pass** |
 | M4 | Ladders + on-demand 1-min option bars for passing setups, validation vs bot data, coverage report | — |
 | M5 | Stage-2 engine, dev-period grid, edge-decay, event modes, stress, report | **User reviews finalists** |
