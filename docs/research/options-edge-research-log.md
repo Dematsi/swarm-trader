@@ -13,11 +13,12 @@ Status keys: **PRELIMINARY** (awaiting review), **FINAL** (reviewed and merged i
 
 ---
 
-## 2026-09-13 — M3 stage 1: stock-level evaluation of the 9 setups — PRELIMINARY
+## 2026-09-13 — M3 stage 1: stock-level evaluation of the 9 setups — FINAL
 
-Status: all 8 plan tasks are built and individually reviewed (head `47c916a`). The final
-whole-branch review is still running. Update this entry to FINAL, or correct it, once that review
-and any fix wave are done.
+Status: all 8 plan tasks were built and reviewed, and the final whole-branch review was completed.
+Its single fix wave (ledger integrity, report notes, end-to-end look-ahead test) passed re-review
+with results byte-identical. Code head is `bb59615`, pushed to PR #1. The ledger holds 18 schema-2
+entries with clean SHA `1231a48`.
 
 **Question.** Does any pre-registered intraday setup predict the underlying stock's move well
 enough to pay for an ATM near-expiry option round trip?
@@ -88,6 +89,17 @@ passing, the options are:
 
 Any new variant counts against the multiple-testing budget.
 
+Rule questions to settle before any M4 work (raised by the final review). Each one changes
+pre-registered evaluation rules:
+- **NEAR expiry.** Should it be the earliest listed expiration (spec §7.1) instead of that week's
+  Friday? SPY/QQQ/IWM had daily expirations for most of the period, so their break-evens are
+  overstated early in the week. The pooled verdict does not change.
+- **Cost test.** Pooled median vs per ticker. SQUEEZE long clears 1.5× break-even on SPY, QQQ and
+  NVDA individually. Restricting tickers after seeing results would be a new ledger configuration
+  and must be pre-registered.
+- **t tie rule.** The bootstrap t has Monte Carlo error of about ±0.02. SQUEEZE long's t is
+  2.97–3.00 across seeds, so a borderline convention is needed.
+
 ---
 
 ## 2026-09-13 — M3-0 data-readiness gate — FINAL
@@ -139,3 +151,11 @@ Any new variant counts against the multiple-testing budget.
   failed on `path\r`. Delete explicit paths instead.
 - **Negative results are results.** Pre-registration plus the ledger means "0 of 18" is
   informative. Retuning parameters after seeing it would invalidate the test.
+- **Look-ahead tests compare only what the signal decides.** Execution fills, such as the entry at
+  the open of the bar starting at T, legitimately depend on bar T. An end-to-end test that
+  compared `entry_price` failed for that reason, not because of a leak.
+- **Don't delete tracked outputs before regenerating them.** Deleting the tracked ledger made
+  `git_commit` report `-dirty`. The dirty check now ignores `reports/options_research/`.
+- **Independent rebuilds make a negative result trustworthy.** The final reviewer rebuilt 160
+  signals from raw minutes and re-implemented detectors on real data, with 0 mismatches. Keep doing
+  this before accepting any pass/fail verdict.
