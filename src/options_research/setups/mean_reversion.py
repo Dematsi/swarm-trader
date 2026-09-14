@@ -2,14 +2,23 @@
 
 from __future__ import annotations
 
-from src.options_research.setups.base import DEFAULT_WINDOW_END, DEFAULT_WINDOW_START, LONG, SHORT, DayContext, grid_signal, window_mask, with_cooldown
+from src.options_research.setups.base import COOLDOWN, DEFAULT_WINDOW_END, DEFAULT_WINDOW_START, LONG, MAX_PER_DAY, SHORT, DayContext, grid_signal, window_mask, with_cooldown
 
 ADX_MAX = 20.0
 SIGMA_MULT = 2.5
 RSI_LOW = 25.0
 RSI_HIGH = 75.0
 INVALIDATION_ATR = 0.1
-PARAMS = {"adx_max": ADX_MAX, "sigma_mult": SIGMA_MULT, "rsi_low": RSI_LOW, "rsi_high": RSI_HIGH, "invalidation_atr": INVALIDATION_ATR, "cooldown_min": 30, "max_per_day": 2, "window": "10:00-15:00"}
+PARAMS = {
+    "adx_max": ADX_MAX,
+    "sigma_mult": SIGMA_MULT,
+    "rsi_low": RSI_LOW,
+    "rsi_high": RSI_HIGH,
+    "invalidation_atr": INVALIDATION_ATR,
+    "cooldown_min": int(COOLDOWN.total_seconds() // 60),
+    "max_per_day": MAX_PER_DAY,
+    "window": f"{DEFAULT_WINDOW_START.strftime('%H:%M')}-{DEFAULT_WINDOW_END.strftime('%H:%M')}",
+}
 
 
 def detect_meanrev(ctx: DayContext) -> list[dict]:

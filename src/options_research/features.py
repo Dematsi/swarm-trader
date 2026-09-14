@@ -47,6 +47,11 @@ def session_grid(minutes: pd.DataFrame, session: Session) -> pd.DataFrame:
         return pd.DataFrame(columns=GRID_COLUMNS)
     grid = bars.reindex(index)
     filled = grid["close"].isna().to_numpy()
+    # Leading minutes before the first trade of the session have no prior close to forward-fill, so they
+    # take the first traded bar's open via this backward fill. That price is not known before the trade
+    # happens, so it is a hindsight value for those leading minutes. It is acceptable here only because
+    # every signal window starts at or after 09:46 ET, well after the open; revisit before using this grid
+    # for thinner names or windows that can start earlier, where the first trade may land later still.
     close = grid["close"].ffill().fillna(grid["open"].bfill())
     for column in ("open", "high", "low"):
         grid[column] = grid[column].fillna(close)

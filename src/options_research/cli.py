@@ -114,26 +114,33 @@ def _cmd_stage1(args: argparse.Namespace) -> int:
 def _cmd_report_m3(args: argparse.Namespace) -> int:
     from src.options_research.config import STAGE1_DEV
     from src.options_research.costs import load_cost_model
-    from src.options_research.evaluate import EVAL_PARAMS, add_break_even, calibration_spots, evaluate_stage1, event_table, horizon_table, per_ticker_break_even, per_ticker_means
-    from src.options_research.ledger import append_entries, dataset_version, git_commit, read_ledger, stage1_entries
+    from src.options_research.evaluate import COST_CALIBRATION, EVAL_PARAMS, add_break_even, calibration_spots, evaluate_stage1, event_table, horizon_table, per_ticker_break_even, per_ticker_means
+    from src.options_research.ledger import append_entries, code_version, dataset_version, git_commit, read_ledger, stage1_entries
     from src.options_research.reports import m3_report, write_report
-    from src.options_research.setups import SETUP_PARAMS
+    from src.options_research.setups import SETUP_PARAMS, SHARED_PARAMS
     from src.options_research.stage1 import load_signals
 
     signals = load_signals()
     signals = add_break_even(signals, load_cost_model(), calibration_spots(sorted(signals["symbol"].unique())))
     evaluation = evaluate_stage1(signals)
     period = f"{STAGE1_DEV[0]}..{STAGE1_DEV[1]}"
-    appended = append_entries(stage1_entries(evaluation, SETUP_PARAMS, EVAL_PARAMS, git_commit(), dataset_version(*STAGE1_DEV), period))
+    dataset = dataset_version(*STAGE1_DEV, extra_ranges=[COST_CALIBRATION])
+    code = code_version()
+    entries = stage1_entries(evaluation, SETUP_PARAMS, EVAL_PARAMS, git_commit(), dataset, period, shared_params=SHARED_PARAMS, code=code)
+    appended = append_entries(entries)
+    ledger = read_ledger()
+    current_keys = {(e["config_hash"], e["dataset_version"]) for e in entries}
+    recorded = int(sum((row.get("config_hash"), row.get("dataset_version")) in current_keys for row in ledger.to_dict("records"))) if not ledger.empty else 0
     summary = {
         "period": period,
         "signals": int(len(signals)),
         "tickers": int(signals["symbol"].nunique()),
         "sessions with signals": int(signals["day"].nunique()),
         "signals within one session of a split": int(signals["near_split"].sum()),
+        "ledger entries recorded for this configuration set": recorded,
         "ledger entries appended this run": appended,
     }
-    text = m3_report(evaluation, horizon_table(signals), event_table(signals), per_ticker_means(signals), per_ticker_break_even(signals), summary, read_ledger())
+    text = m3_report(evaluation, horizon_table(signals), event_table(signals), per_ticker_means(signals), per_ticker_break_even(signals), summary, ledger)
     path = write_report("m3_stage1", text)
     print(json.dumps({"report": str(path), "passed": evaluation.loc[evaluation["passed"], ["setup", "direction"]].values.tolist(), "ledger_appended": appended}))
     return 0

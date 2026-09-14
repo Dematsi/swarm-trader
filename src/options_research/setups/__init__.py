@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from src.options_research.setups import gaps_levels, mean_reversion, orb, squeeze, vwap
+from src.options_research import features, levels
+from src.options_research.setups import base, gaps_levels, mean_reversion, orb, squeeze, vwap
 from src.options_research.setups.base import DayContext
 
 SETUPS: dict[str, Callable[[DayContext], list[dict]]] = {
@@ -34,3 +35,53 @@ SETUP_PARAMS: dict[str, dict] = {
 
 def detect_all(ctx: DayContext) -> list[dict]:
     return [signal for detect in SETUPS.values() for signal in detect(ctx)]
+
+
+def _hhmm(value) -> str:
+    return value.strftime("%H:%M")
+
+
+def _build_shared_params() -> dict:
+    # Deferred: stage1.py imports this package (`from src.options_research.setups import detect_all`), so
+    # importing stage1 at module scope here would create an import cycle. This is only evaluated the first
+    # time `SHARED_PARAMS` is accessed (see module __getattr__ below), by which point the cycle has resolved.
+    from src.options_research import stage1
+
+    return {
+        "features": {
+            "atr_n": features.ATR_N,
+            "rsi_n": features.RSI_N,
+            "adx_n": features.ADX_N,
+            "bb_n": features.BB_N,
+            "bb_k": features.BB_K,
+            "kc_n": features.KC_N,
+            "kc_k": features.KC_K,
+        },
+        "levels": {
+            "premarket_min_volume": levels.PREMARKET_MIN_VOLUME,
+            "earliest_premarket_read": _hhmm(levels.EARLIEST_PREMARKET_READ),
+            "or_volume_lookback": levels.OR_VOLUME_LOOKBACK,
+            "warmup_sessions": levels.WARMUP_SESSIONS,
+            "or_minutes": list(levels.OR_MINUTES),
+        },
+        "base": {
+            "default_window_start": _hhmm(base.DEFAULT_WINDOW_START),
+            "default_window_end": _hhmm(base.DEFAULT_WINDOW_END),
+            "last_entry_before_close_min": int(base.LAST_ENTRY_BEFORE_CLOSE.total_seconds() // 60),
+            "cooldown_min": int(base.COOLDOWN.total_seconds() // 60),
+            "max_per_day": base.MAX_PER_DAY,
+        },
+        "stage1": {"horizons": list(stage1.HORIZONS), "excursion_minutes": stage1.EXCURSION_MINUTES},
+    }
+
+
+_SHARED_PARAMS_CACHE: dict | None = None
+
+
+def __getattr__(name: str):
+    global _SHARED_PARAMS_CACHE
+    if name == "SHARED_PARAMS":
+        if _SHARED_PARAMS_CACHE is None:
+            _SHARED_PARAMS_CACHE = _build_shared_params()
+        return _SHARED_PARAMS_CACHE
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

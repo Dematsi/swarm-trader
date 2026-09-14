@@ -4,11 +4,18 @@ from __future__ import annotations
 
 from datetime import time, timedelta
 
+from src.options_research.levels import OR_VOLUME_LOOKBACK
 from src.options_research.setups.base import LONG, SHORT, DayContext, first_true, grid_signal, opening_range, window_mask
 
 WINDOW_END = time(11, 30)
 VOLUME_MULT = 1.2
-PARAMS = {"window_end": "11:30", "volume_mult": VOLUME_MULT, "volume_lookback_sessions": 20, "trigger": "first 1-min close beyond OR", "invalidation": "close vs OR midpoint"}
+PARAMS = {
+    "window_end": WINDOW_END.strftime("%H:%M"),
+    "volume_mult": VOLUME_MULT,
+    "volume_lookback_sessions": OR_VOLUME_LOOKBACK,
+    "trigger": "first 1-min close beyond OR",
+    "invalidation": "close vs OR midpoint",
+}
 
 
 def detect_orb(ctx: DayContext, minutes: int) -> list[dict]:

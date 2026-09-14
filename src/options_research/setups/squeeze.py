@@ -2,15 +2,16 @@
 
 from __future__ import annotations
 
+from src.options_research.features import BB_K, BB_N, KC_K, KC_N
 from src.options_research.setups.base import DEFAULT_WINDOW_END, DEFAULT_WINDOW_START, LONG, SHORT, DayContext, first_true, make_signal, previous_run, window_mask
 
 MIN_SQUEEZE_BARS = 6
 PARAMS = {
-    "bollinger": "20 bars, 2 sigma (ddof=0)",
-    "keltner": "EMA20 +/- 1.5 x Wilder ATR20",
+    "bollinger": f"{BB_N} bars, {BB_K:g} sigma (ddof=0)",
+    "keltner": f"EMA{KC_N} +/- {KC_K:g} x Wilder ATR{KC_N}",
     "min_squeeze_bars": MIN_SQUEEZE_BARS,
     "squeeze_count": "today's 5-min bars only",
-    "window": "10:00-15:00 on 5-min bar end",
+    "window": f"{DEFAULT_WINDOW_START.strftime('%H:%M')}-{DEFAULT_WINDOW_END.strftime('%H:%M')} on 5-min bar end",
     "invalidation": "5-min close vs KC midline",
 }
 

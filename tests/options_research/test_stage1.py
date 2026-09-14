@@ -103,6 +103,53 @@ def test_signals_for_symbol_wires_levels_features_setups_and_outcomes():
     assert pdl["ret_60"] == pytest.approx(0.0)
 
 
+PERTURBED_RAW_COLUMNS = ("open", "high", "low", "close", "high_clean", "low_clean")
+COMPARE_COLUMNS = ["setup", "direction", "decision_ts", "price", "inval_value", "entry_price"]
+
+
+def _perturb_day(minutes: pd.DataFrame, cut: pd.Timestamp, factor: float) -> pd.DataFrame:
+    """Scale every raw column on DAY at or after `cut` by `factor`, keeping high/low consistent with open/close."""
+    out = minutes.copy()
+    et_day = out["ts"].dt.tz_convert("America/New_York").dt.date
+    later = (et_day == DAY) & (out["ts"] >= cut)
+    idx = out.index[later]
+    for column in PERTURBED_RAW_COLUMNS:
+        out.loc[idx, column] = out.loc[idx, column] * factor
+    body_high = np.maximum(out.loc[idx, "open"], out.loc[idx, "close"])
+    body_low = np.minimum(out.loc[idx, "open"], out.loc[idx, "close"])
+    out.loc[idx, "high"] = np.maximum(out.loc[idx, "high"], body_high)
+    out.loc[idx, "low"] = np.minimum(out.loc[idx, "low"], body_low)
+    out.loc[idx, "volume"] = (out.loc[idx, "volume"] * factor).round().astype("int64")
+    return out
+
+
+def _comparable_rows(signals: pd.DataFrame, cut: pd.Timestamp) -> list[tuple]:
+    subset = signals[(signals["day"] == DAY) & (signals["decision_ts"] <= cut)][COMPARE_COLUMNS]
+    return sorted(
+        tuple(round(value, 9) if isinstance(value, float) else value for value in row)
+        for row in subset.itertuples(index=False)
+    )
+
+
+def test_signals_for_symbol_is_point_in_time_end_to_end():
+    """End-to-end look-ahead check (spec §10) through the real levels/features/setups pipeline, not the
+    synthetic DayContext used by `assert_point_in_time`."""
+    sessions = sessions_between(START, DAY)
+    minutes = synthetic_minutes("TEST", sessions, breakout_day=DAY)
+    spy = synthetic_minutes("SPY", sessions)
+    base = signals_for_symbol("TEST", minutes, spy, sessions, NO_SPLITS)
+    day_signals = base[base["day"] == DAY]
+    assert not day_signals.empty, "test is vacuous: no signals fired on DAY"
+
+    cuts = sorted(set(day_signals["decision_ts"]) | {at("11:00"), at("14:00")})
+    for cut in cuts:
+        expected = _comparable_rows(day_signals, cut)
+        for factor in (0.5, 1.5):
+            perturbed = signals_for_symbol("TEST", _perturb_day(minutes, cut, factor), _perturb_day(spy, cut, factor), sessions, NO_SPLITS)
+            actual = _comparable_rows(perturbed, cut)
+            assert actual == expected, f"signals decided by {cut} changed after perturbing later bars (factor={factor})"
+
+
 def write_lake(root, sessions):
     for symbol, breakout in (("NVDA", DAY), ("SPY", None)):
         minutes = synthetic_minutes(symbol, sessions, breakout_day=breakout)

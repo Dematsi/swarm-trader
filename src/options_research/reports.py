@@ -10,8 +10,25 @@ import pandas as pd
 
 from src.options_research.config import lake_root, reports_dir
 from src.options_research.corporate_actions import EXPECTED_SPLITS, load_splits
+from src.options_research.evaluate import MIN_SIGNALS, T_MIN
 from src.options_research.events_sources import load_events
 from src.options_research.print_checks import checks_path
+
+T_MIN_NOISE = 0.05  # flagging band around T_MIN for the notes column; the bootstrap's own Monte Carlo error is about +/-0.02
+FAILING_CRITERIA = (("t", "pass_t"), ("years", "pass_years"), ("cost", "pass_cost"), ("n", "pass_n"))
+
+
+def _row_notes(row, t_min: float = T_MIN, min_signals: int = MIN_SIGNALS) -> str:
+    """Generic, non-hard-coded explanation of what decided a pass/fail row."""
+    if row["n"] < min_signals:
+        return "insufficient signals (untestable)"
+    parts = []
+    if abs(row["t"] - t_min) < T_MIN_NOISE:
+        parts.append("t within Monte Carlo noise of 3.0")
+    failed = [name for name, column in FAILING_CRITERIA if not row[column]]
+    if failed:
+        parts.append("binding: " + ", ".join(failed))
+    return "; ".join(parts)
 
 
 def _read_json(path: Path) -> dict:
@@ -198,10 +215,12 @@ def m3_report(
         lines.append("No signals.")
     else:
         table = _bps(evaluation, ["mean_ret_60", "pooled_break_even"]).rename(columns={"mean_ret_60": "mean_bps", "pooled_break_even": "break_even_bps"})
+        table["notes"] = table.apply(_row_notes, axis=1)
         table["t"] = table["t"].round(2)
         table["cost_ratio"] = table["cost_ratio"].round(2)
-        columns = ["setup", "direction", "n", "mean_bps", "t", "positive_years", "break_even_bps", "cost_ratio", "pass_n", "pass_t", "pass_years", "pass_cost", "passed"]
+        columns = ["setup", "direction", "n", "mean_bps", "t", "positive_years", "break_even_bps", "cost_ratio", "pass_n", "pass_t", "pass_years", "pass_cost", "passed", "notes"]
         lines.append(table[columns].to_markdown(index=False))
+        lines += ["", "The t-criterion uses a 10,000-resample day-block bootstrap whose Monte Carlo error is about ±0.02; rows noted as within noise should be read by their other criteria."]
     passed = evaluation[evaluation["passed"].astype(bool)] if not evaluation.empty else evaluation
     names = ", ".join(f"{row.setup} {row.direction}" for row in passed.itertuples())
     lines += ["", f"Passing setup x direction pairs: {len(passed)} of {len(evaluation)}" + (f": {names}" if names else ""), ""]
@@ -235,7 +254,7 @@ def m3_report(
         "",
     ]
     stage1_rows = ledger[ledger["stage"] == "stage1"] if not ledger.empty else ledger
-    count = int(stage1_rows["config_hash"].nunique()) if not stage1_rows.empty else 0
+    count = int(stage1_rows[["config_hash", "dataset_version"]].drop_duplicates().shape[0]) if not stage1_rows.empty else 0
     lines += [f"- Stage-1 configurations recorded: {count}", f"- Expected false passes under the null (one-sided p at t = 3): {expected_false_passes(count):.3f}", ""]
     return "\n".join(lines)
 

@@ -5,9 +5,11 @@ from __future__ import annotations
 import numpy as np
 
 from src.options_research.setups.base import (
+    COOLDOWN,
     DEFAULT_WINDOW_END,
     DEFAULT_WINDOW_START,
     LONG,
+    MAX_PER_DAY,
     SHORT,
     DayContext,
     first_true,
@@ -20,8 +22,10 @@ from src.options_research.setups.base import (
 RUN_BARS = 30
 ATR_OFFSET = 0.1
 SPY_SLOPE_BARS = 30
-RECLAIM_PARAMS = {"run_bars": RUN_BARS, "atr_offset": ATR_OFFSET, "window": "10:00-15:00", "invalidation": "close vs VWAP -/+ 0.1 ATR5"}
-PULLBACK_PARAMS = {"run_bars": RUN_BARS, "atr_offset": ATR_OFFSET, "spy_slope_bars": SPY_SLOPE_BARS, "cooldown_min": 30, "max_per_day": 2, "window": "10:00-15:00", "invalidation": "close vs VWAP -/+ 0.1 ATR5"}
+_WINDOW = f"{DEFAULT_WINDOW_START.strftime('%H:%M')}-{DEFAULT_WINDOW_END.strftime('%H:%M')}"
+_COOLDOWN_MIN = int(COOLDOWN.total_seconds() // 60)
+RECLAIM_PARAMS = {"run_bars": RUN_BARS, "atr_offset": ATR_OFFSET, "window": _WINDOW, "invalidation": "close vs VWAP -/+ 0.1 ATR5"}
+PULLBACK_PARAMS = {"run_bars": RUN_BARS, "atr_offset": ATR_OFFSET, "spy_slope_bars": SPY_SLOPE_BARS, "cooldown_min": _COOLDOWN_MIN, "max_per_day": MAX_PER_DAY, "window": _WINDOW, "invalidation": "close vs VWAP -/+ 0.1 ATR5"}
 
 
 def _arrays(ctx: DayContext, *columns: str) -> list[np.ndarray]:

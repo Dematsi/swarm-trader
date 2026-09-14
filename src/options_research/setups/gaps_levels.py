@@ -16,9 +16,16 @@ GAP_FILL_WINDOW = (time(9, 46), time(11, 0))
 PDL_WINDOW = (time(9, 46), DEFAULT_WINDOW_END)
 PDL_TRIGGER_ATR = 0.05
 PDL_INVALIDATION_ATR = 0.1
-GAP_GO_PARAMS = {"gap": GAP_THRESHOLD, "window": "09:46-11:30", "trigger": "close beyond filtered pre-market high/low", "invalidation": "close vs 09:30-09:45 opposite extreme"}
-GAP_FILL_PARAMS = {"gap": GAP_THRESHOLD, "window": "09:46-11:00", "trigger": "close beyond 09:30-09:45 extreme toward prior close", "invalidation": "close vs 09:30-09:45 opposite extreme"}
-PDL_PARAMS = {"window": "09:46-15:00", "trigger_atr": PDL_TRIGGER_ATR, "invalidation_atr": PDL_INVALIDATION_ATR, "levels": "prior RTH high/low, adjusted, clean"}
+
+
+def _window_str(bounds: tuple[time, time]) -> str:
+    start, end = bounds
+    return f"{start.strftime('%H:%M')}-{end.strftime('%H:%M')}"
+
+
+GAP_GO_PARAMS = {"gap": GAP_THRESHOLD, "window": _window_str(GAP_GO_WINDOW), "trigger": "close beyond filtered pre-market high/low", "invalidation": "close vs 09:30-09:45 opposite extreme"}
+GAP_FILL_PARAMS = {"gap": GAP_THRESHOLD, "window": _window_str(GAP_FILL_WINDOW), "trigger": "close beyond 09:30-09:45 extreme toward prior close", "invalidation": "close vs 09:30-09:45 opposite extreme"}
+PDL_PARAMS = {"window": _window_str(PDL_WINDOW), "trigger_atr": PDL_TRIGGER_ATR, "invalidation_atr": PDL_INVALIDATION_ATR, "levels": "prior RTH high/low, adjusted, clean"}
 
 
 def gap(ctx: DayContext) -> float | None:

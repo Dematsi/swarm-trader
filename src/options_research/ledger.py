@@ -33,18 +33,38 @@ def git_commit(repo: Path = REPO_ROOT) -> str:
     return f"{head}-dirty" if dirty else head
 
 
-def dataset_version(start: date, end: date, root: Path | None = None, symbols=UNIVERSE) -> str:
-    """Fingerprint of the lake inputs: stock day-file contents in the period plus the events/splits/print-check/cost files."""
-    root = root or lake_root()
-    digest = hashlib.sha256()
+def _hash_stock_files(digest, symbols, start: date, end: date, root: Path) -> None:
     for path in stock_minute_files(symbols, start, end, root=root):
         digest.update(f"{path.parent.parent.name}/{path.parent.name}/{path.name}\n".encode("utf-8"))
         with path.open("rb") as handle:
             for chunk in iter(lambda: handle.read(1 << 20), b""):
                 digest.update(chunk)
+
+
+def dataset_version(start: date, end: date, root: Path | None = None, symbols=UNIVERSE, extra_ranges: tuple[tuple[date, date], ...] = ()) -> str:
+    """Fingerprint of the lake inputs: stock day-file contents in the period (plus any extra ranges, e.g. cost
+    calibration) and the events/splits/print-check/cost files."""
+    root = root or lake_root()
+    digest = hashlib.sha256()
+    for range_start, range_end in ((start, end), *extra_ranges):
+        _hash_stock_files(digest, symbols, range_start, range_end, root)
     for parts in _DATASET_INPUTS:
         path = root.joinpath(*parts)
         digest.update(path.read_bytes() if path.exists() else b"missing")
+    return digest.hexdigest()[:16]
+
+
+_CODE_VERSION_FILES = ("features.py", "levels.py", "stage1.py", "evaluate.py")
+PACKAGE_ROOT = Path(__file__).resolve().parent
+
+
+def code_version(root: Path = PACKAGE_ROOT) -> str:
+    """16-hex SHA-256 over the relative path plus bytes of every module whose behaviour drives stage-1 results."""
+    paths = [root / name for name in _CODE_VERSION_FILES] + list((root / "setups").glob("*.py"))
+    digest = hashlib.sha256()
+    for path in sorted(paths, key=lambda p: p.relative_to(root).as_posix()):
+        digest.update(path.relative_to(root).as_posix().encode("utf-8") + b"\n")
+        digest.update(path.read_bytes())
     return digest.hexdigest()[:16]
 
 
@@ -76,14 +96,51 @@ def _number(value) -> float | None:
     return None if value is None or (isinstance(value, float) and math.isnan(value)) else float(value)
 
 
-def stage1_entries(evaluation: pd.DataFrame, setup_params: dict, eval_params: dict, commit: str, dataset: str, period: str, now: datetime | None = None) -> list[dict]:
+def stage1_entries(
+    evaluation: pd.DataFrame,
+    setup_params: dict,
+    eval_params: dict,
+    commit: str,
+    dataset: str,
+    period: str,
+    now: datetime | None = None,
+    shared_params: dict | None = None,
+    code: str | None = None,
+) -> list[dict]:
     now = now or datetime.now(timezone.utc)
+    shared_params = shared_params or {}
+    code = code or ""
     entries = []
     for row in evaluation.to_dict("records"):
-        config = {"setup": row["setup"], "direction": row["direction"], "setup_params": setup_params[row["setup"]], "evaluation": eval_params}
+        config = {
+            "setup": row["setup"],
+            "direction": row["direction"],
+            "setup_params": setup_params[row["setup"]],
+            "shared_params": shared_params,
+            "evaluation": eval_params,
+            "code_version": code,
+        }
         entries.append({
-            "timestamp": now.isoformat(), "stage": "stage1", "setup": row["setup"], "direction": row["direction"], "config_hash": config_hash(config),
-            "git_commit": commit, "dataset_version": dataset, "period": period, "n": int(row["n"]), "mean_ret_60": _number(row["mean_ret_60"]),
-            "t": _number(row["t"]), "passed": bool(row["passed"]),
+            "timestamp": now.isoformat(),
+            "stage": "stage1",
+            "setup": row["setup"],
+            "direction": row["direction"],
+            "config_hash": config_hash(config),
+            "code_version": code,
+            "git_commit": commit,
+            "dataset_version": dataset,
+            "period": period,
+            "n": int(row["n"]),
+            "mean_ret_60": _number(row["mean_ret_60"]),
+            "t": _number(row["t"]),
+            "positive_years": int(row["positive_years"]),
+            "pooled_break_even": _number(row["pooled_break_even"]),
+            "cost_ratio": _number(row["cost_ratio"]),
+            "pass_n": bool(row["pass_n"]),
+            "pass_t": bool(row["pass_t"]),
+            "pass_years": bool(row["pass_years"]),
+            "pass_cost": bool(row["pass_cost"]),
+            "passed": bool(row["passed"]),
+            "schema": 2,
         })
     return entries

@@ -24,10 +24,12 @@ DESCRIPTIVE_RESAMPLES = 2_000
 SEED = 20260912
 ATM_DELTA = 0.5
 COST_CALIBRATION = (date(2026, 8, 21), DATA_FREEZE)
+FEES_PER_CONTRACT_SIDE = CostModel.__dataclass_fields__["fees_per_side"].default
 EVAL_PARAMS = {
     "primary": PRIMARY, "t_min": T_MIN, "min_signals": MIN_SIGNALS, "min_positive_years": MIN_POSITIVE_YEARS, "cost_multiple": COST_MULTIPLE,
     "resamples": RESAMPLES, "seed": SEED, "atm_delta": ATM_DELTA, "near_expiry": "that week's Friday (prior session if holiday)",
-    "cost_scaling": "ATM level-3 mid premium; h x price / median RTH close 2026-08-21..2026-09-11", "fees_per_contract_side": 0.05,
+    "cost_scaling": f"ATM level-3 mid premium; h x price / median RTH close {COST_CALIBRATION[0]}..{COST_CALIBRATION[1]}",
+    "fees_per_contract_side": FEES_PER_CONTRACT_SIDE,
 }
 EVALUATION_COLUMNS = ["setup", "direction", "n", "mean_ret_60", "se", "t", "positive_years", "pooled_break_even", "cost_ratio", "pass_t", "pass_years", "pass_cost", "pass_n", "passed"]
 
