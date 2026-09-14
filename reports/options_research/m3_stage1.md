@@ -5,30 +5,33 @@
 - tickers: 12
 - sessions with signals: 1135
 - signals within one session of a split: 62
+- ledger entries recorded for this configuration set: 18
 - ledger entries appended this run: 0
 
 ## Pass/fail (primary horizon: +60 min)
 
-| setup         | direction   |    n |   mean_bps |     t |   positive_years |   break_even_bps |   cost_ratio | pass_n   | pass_t   | pass_years   | pass_cost   | passed   |
-|:--------------|:------------|-----:|-----------:|------:|-----------------:|-----------------:|-------------:|:---------|:---------|:-------------|:------------|:---------|
-| GAP_FILL      | long        | 1272 |       6.28 |  1.03 |                4 |             4.55 |         1.38 | True     | False    | True         | False       | False    |
-| GAP_FILL      | short       | 1428 |      -6.59 | -1.33 |                1 |             4.52 |        -1.46 | True     | False    | False        | False       | False    |
-| GAP_GO        | long        | 1715 |       1.93 |  0.49 |                4 |             4.54 |         0.42 | True     | False    | True         | False       | False    |
-| GAP_GO        | short       | 1538 |       4.39 |  0.95 |                3 |             4.57 |         0.96 | True     | False    | False        | False       | False    |
-| MEANREV       | long        |   51 |       8.21 |  0.54 |                3 |             4.49 |         1.83 | False    | False    | False        | True        | False    |
-| MEANREV       | short       |   45 |     -46    | -1.37 |                2 |             4.82 |        -9.54 | False    | False    | False        | False       | False    |
-| ORB15         | long        | 2163 |       0.15 |  0.04 |                3 |             4.53 |         0.03 | True     | False    | False        | False       | False    |
-| ORB15         | short       | 2163 |      -2.18 | -0.75 |                1 |             4.53 |        -0.48 | True     | False    | False        | False       | False    |
-| ORB30         | long        | 1700 |      -0.37 | -0.11 |                3 |             4.52 |        -0.08 | True     | False    | False        | False       | False    |
-| ORB30         | short       | 1675 |      -0.52 | -0.16 |                2 |             4.54 |        -0.11 | True     | False    | False        | False       | False    |
-| PDL_BREAK     | long        | 6201 |       3.19 |  1.6  |                5 |             4.53 |         0.7  | True     | False    | True         | False       | False    |
-| PDL_BREAK     | short       | 5522 |      -0.73 | -0.28 |                2 |             4.55 |        -0.16 | True     | False    | False        | False       | False    |
-| SQUEEZE       | long        | 3247 |       4.38 |  2.99 |                5 |             4.54 |         0.97 | True     | False    | True         | False       | False    |
-| SQUEEZE       | short       | 3011 |       1.25 |  0.72 |                3 |             4.53 |         0.28 | True     | False    | False        | False       | False    |
-| VWAP_PULLBACK | long        | 5177 |       2.47 |  1.41 |                4 |             4.53 |         0.55 | True     | False    | True         | False       | False    |
-| VWAP_PULLBACK | short       | 4733 |       0.56 |  0.44 |                4 |             4.55 |         0.12 | True     | False    | True         | False       | False    |
-| VWAP_RECLAIM  | long        | 4821 |       1.14 |  0.87 |                4 |             4.55 |         0.25 | True     | False    | True         | False       | False    |
-| VWAP_RECLAIM  | short       | 5103 |      -1.75 | -1.09 |                2 |             4.54 |        -0.39 | True     | False    | False        | False       | False    |
+| setup         | direction   |    n |   mean_bps |     t |   positive_years |   break_even_bps |   cost_ratio | pass_n   | pass_t   | pass_years   | pass_cost   | passed   | notes                                               |
+|:--------------|:------------|-----:|-----------:|------:|-----------------:|-----------------:|-------------:|:---------|:---------|:-------------|:------------|:---------|:----------------------------------------------------|
+| GAP_FILL      | long        | 1272 |       6.28 |  1.03 |                4 |             4.55 |         1.38 | True     | False    | True         | False       | False    | binding: t, cost                                    |
+| GAP_FILL      | short       | 1428 |      -6.59 | -1.33 |                1 |             4.52 |        -1.46 | True     | False    | False        | False       | False    | binding: t, years, cost                             |
+| GAP_GO        | long        | 1715 |       1.93 |  0.49 |                4 |             4.54 |         0.42 | True     | False    | True         | False       | False    | binding: t, cost                                    |
+| GAP_GO        | short       | 1538 |       4.39 |  0.95 |                3 |             4.57 |         0.96 | True     | False    | False        | False       | False    | binding: t, years, cost                             |
+| MEANREV       | long        |   51 |       8.21 |  0.54 |                3 |             4.49 |         1.83 | False    | False    | False        | True        | False    | insufficient signals (untestable)                   |
+| MEANREV       | short       |   45 |     -46    | -1.37 |                2 |             4.82 |        -9.54 | False    | False    | False        | False       | False    | insufficient signals (untestable)                   |
+| ORB15         | long        | 2163 |       0.15 |  0.04 |                3 |             4.53 |         0.03 | True     | False    | False        | False       | False    | binding: t, years, cost                             |
+| ORB15         | short       | 2163 |      -2.18 | -0.75 |                1 |             4.53 |        -0.48 | True     | False    | False        | False       | False    | binding: t, years, cost                             |
+| ORB30         | long        | 1700 |      -0.37 | -0.11 |                3 |             4.52 |        -0.08 | True     | False    | False        | False       | False    | binding: t, years, cost                             |
+| ORB30         | short       | 1675 |      -0.52 | -0.16 |                2 |             4.54 |        -0.11 | True     | False    | False        | False       | False    | binding: t, years, cost                             |
+| PDL_BREAK     | long        | 6201 |       3.19 |  1.6  |                5 |             4.53 |         0.7  | True     | False    | True         | False       | False    | binding: t, cost                                    |
+| PDL_BREAK     | short       | 5522 |      -0.73 | -0.28 |                2 |             4.55 |        -0.16 | True     | False    | False        | False       | False    | binding: t, years, cost                             |
+| SQUEEZE       | long        | 3247 |       4.38 |  2.99 |                5 |             4.54 |         0.97 | True     | False    | True         | False       | False    | t within Monte Carlo noise of 3.0; binding: t, cost |
+| SQUEEZE       | short       | 3011 |       1.25 |  0.72 |                3 |             4.53 |         0.28 | True     | False    | False        | False       | False    | binding: t, years, cost                             |
+| VWAP_PULLBACK | long        | 5177 |       2.47 |  1.41 |                4 |             4.53 |         0.55 | True     | False    | True         | False       | False    | binding: t, cost                                    |
+| VWAP_PULLBACK | short       | 4733 |       0.56 |  0.44 |                4 |             4.55 |         0.12 | True     | False    | True         | False       | False    | binding: t, cost                                    |
+| VWAP_RECLAIM  | long        | 4821 |       1.14 |  0.87 |                4 |             4.55 |         0.25 | True     | False    | True         | False       | False    | binding: t, cost                                    |
+| VWAP_RECLAIM  | short       | 5103 |      -1.75 | -1.09 |                2 |             4.54 |        -0.39 | True     | False    | False        | False       | False    | binding: t, years, cost                             |
+
+The t-criterion uses a 10,000-resample day-block bootstrap whose Monte Carlo error is about ±0.02; rows noted as within noise should be read by their other criteria.
 
 Passing setup x direction pairs: 0 of 18
 

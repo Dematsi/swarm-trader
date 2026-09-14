@@ -53,6 +53,12 @@ The remaining ORB, short-side PDL/VWAP and GAP_FILL short pairs sit at or below 
 `reports/options_research/m3_stage1.md` for the full table, horizons (+30 min and 15:45 exit),
 event-day splits and per-ticker results.
 
+**Final review (2026-09-13).**
+- Independent rebuild of 160 signals matched, with 0 mismatches.
+- The detectors were re-implemented on real data and matched.
+- SQUEEZE long's t of 2.99 is within Monte Carlo noise; cost is the binding criterion.
+- The ledger was regenerated with schema 2.
+
 **What the numbers suggest.** These are hypotheses to test, not conclusions.
 - **No option edge at +60 min.** The nearest pair (SQUEEZE long) has the right sign in every
   year, but its average move is about one break-even, not the 1.5× required.
