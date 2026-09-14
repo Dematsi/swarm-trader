@@ -1,4 +1,5 @@
 import re
+import subprocess
 from datetime import date, datetime, timezone
 
 import pandas as pd
@@ -67,6 +68,23 @@ def test_dataset_version_changes_when_a_day_file_changes_with_the_same_size(tmp_
 
 def test_git_commit_is_a_sha():
     assert re.fullmatch(r"[0-9a-f]{40}(-dirty)?", git_commit())
+
+
+def test_git_commit_dirty_check_excludes_generated_reports(monkeypatch):
+    calls = []
+
+    def fake_run(cmd, **kwargs):
+        calls.append(cmd)
+        stdout = ("a" * 40 + "\n") if cmd[:2] == ["git", "rev-parse"] else ""
+        return subprocess.CompletedProcess(cmd, 0, stdout=stdout, stderr="")
+
+    import src.options_research.ledger as ledger_module
+
+    monkeypatch.setattr(ledger_module.subprocess, "run", fake_run)
+    assert git_commit() == "a" * 40
+    status_calls = [c for c in calls if c[:2] == ["git", "status"]]
+    assert len(status_calls) == 1
+    assert ":(exclude)reports/options_research" in status_calls[0]
 
 
 def test_dataset_version_includes_extra_ranges(tmp_path):

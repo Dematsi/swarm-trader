@@ -28,8 +28,16 @@ def config_hash(config: dict) -> str:
 
 
 def git_commit(repo: Path = REPO_ROOT) -> str:
+    """HEAD SHA, "-dirty" if the tree has changes outside generated reports (M3-R22): those are the
+    ledger/report files this same command regenerates, so they shouldn't taint their own provenance."""
     head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True, check=True).stdout.strip()
-    dirty = subprocess.run(["git", "status", "--porcelain", "--untracked-files=no"], cwd=repo, capture_output=True, text=True, check=True).stdout.strip()
+    dirty = subprocess.run(
+        ["git", "status", "--porcelain", "--untracked-files=no", "--", ".", ":(exclude)reports/options_research"],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
     return f"{head}-dirty" if dirty else head
 
 

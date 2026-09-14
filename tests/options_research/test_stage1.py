@@ -104,7 +104,12 @@ def test_signals_for_symbol_wires_levels_features_setups_and_outcomes():
 
 
 PERTURBED_RAW_COLUMNS = ("open", "high", "low", "close", "high_clean", "low_clean")
-COMPARE_COLUMNS = ["setup", "direction", "decision_ts", "price", "inval_value", "entry_price"]
+# Detector-decided fields only (spec §10 point-in-time check). `entry_price`, `ret_*`, `mfe_60` and
+# `mae_60` are outcomes measured from the open of the bar starting at decision time T (spec §8.1) -
+# simultaneous with, not later than, T - so they are legitimately sensitive to perturbing that same
+# bar when a cut equals a signal's own decision_ts; they are not signal inputs and are excluded here
+# (M3-R21).
+COMPARE_COLUMNS = ["setup", "direction", "decision_ts", "price", "inval_kind", "inval_side", "inval_value", "atr5"]
 
 
 def _perturb_day(minutes: pd.DataFrame, cut: pd.Timestamp, factor: float) -> pd.DataFrame:
